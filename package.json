@@ -1,0 +1,17 @@
+{
+  "name": "autotest-playground",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Comprehensive Test Automation Playground Web Application",
+  "scripts": {
+    "start": "concurrently -k \"npm run server\" \"npm run client\"",
+    "server": "node server/server.js",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "dev": "concurrently -k \"npm run server\" \"npm run client\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
+
