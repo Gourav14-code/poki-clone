@@ -42,7 +42,7 @@ export default function CyberCursor() {
 
       // Check if hovering interactive element or text input
       const target = e.target;
-      if (target) {
+      if (target && typeof target.closest === 'function') {
         const interactive = target.closest(
           'a, button, input, select, textarea, [role="button"], [data-testid], .cursor-pointer, label, summary, [tabindex="0"]'
         );
@@ -51,6 +51,9 @@ export default function CyberCursor() {
         );
         setIsHovered(!!interactive);
         setIsText(!!textInput);
+      } else {
+        setIsHovered(false);
+        setIsText(false);
       }
     };
 

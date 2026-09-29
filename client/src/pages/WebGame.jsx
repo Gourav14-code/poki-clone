@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import PistolDuel from './PistolDuel';
+import BikeRacer  from './BikeRacer';
 
 // ─── Game Catalog ────────────────────────────────────────────────────────────
 const GAMES_DATA = [
-  { id: 1, title: 'Pistol Target Shoot', category: 'Action', size: '2x2', color: 'from-red-500 to-amber-600',   icon: 'fa-gun',           likes: '98%', playable: true  },
-  { id: 2, title: 'Subway Surfers',      category: 'Arcade', size: '1x2', color: 'from-emerald-400 to-teal-600', icon: 'fa-person-running', likes: '95%', playable: false },
-  { id: 3, title: 'Speed Racer 3D',      category: 'Racing', size: '2x1', color: 'from-blue-600 to-indigo-700',  icon: 'fa-car-side',      likes: '92%', playable: false },
-  { id: 4, title: 'Temple Dash',         category: 'Action', size: '1x1', color: 'from-yellow-500 to-amber-700', icon: 'fa-person-hiking',  likes: '91%', playable: false },
-  { id: 5, title: 'Slither Snake',       category: 'Arcade', size: '1x1', color: 'from-purple-500 to-pink-600',  icon: 'fa-staff-snake',    likes: '89%', playable: false },
-  { id: 6, title: 'Brain Puzzle Deluxe', category: 'Puzzle', size: '2x1', color: 'from-cyan-500 to-blue-500',    icon: 'fa-brain',          likes: '96%', playable: false },
-  { id: 7, title: 'Ludo Master',         category: 'Puzzle', size: '1x1', color: 'from-rose-500 to-red-600',     icon: 'fa-dice',           likes: '88%', playable: false },
-  { id: 8, title: 'Zombie Survival',     category: 'Action', size: '1x2', color: 'from-stone-700 to-slate-900',  icon: 'fa-biohazard',      likes: '94%', playable: false },
-  { id: 9, title: 'Fruit Ninja Slash',   category: 'Arcade', size: '1x1', color: 'from-lime-500 to-emerald-600', icon: 'fa-apple-whole',    likes: '93%', playable: false },
-  { id:10, title: 'Super Bike Stunts',   category: 'Racing', size: '2x1', color: 'from-orange-500 to-red-600',   icon: 'fa-motorcycle',     likes: '90%', playable: false },
-  { id:11, title: 'Tic Tac Toe Pro',     category: 'Puzzle', size: '1x1', color: 'from-indigo-500 to-purple-600',icon: 'fa-xmarks-lines',   likes: '85%', playable: false },
-  { id:12, title: 'Highway Moto',        category: 'Racing', size: '1x1', color: 'from-sky-400 to-blue-600',     icon: 'fa-gauge-high',     likes: '87%', playable: false },
+  { id: 0, title: 'Pistol Duel',         category: 'Action', size: '2x2', color: 'from-slate-800 to-indigo-900', icon: 'fa-crosshairs',   likes: '99%', playable: true, duel: true  },
+  { id:-1, title: '3D Bike Racer',       category: 'Racing', size: '2x2', color: 'from-blue-800 to-cyan-700',   icon: 'fa-motorcycle',   likes: '97%', playable: true, bike: true  },
+  { id: 1, title: 'Pistol Target Shoot', category: 'Action', size: '2x1', color: 'from-red-500 to-amber-600',   icon: 'fa-gun',          likes: '98%', playable: true  },
+  { id: 2, title: 'Subway Surfers',      category: 'Arcade', size: '1x2', color: 'from-emerald-400 to-teal-600', icon: 'fa-person-running',likes: '95%', playable: false },
+  { id: 3, title: 'Speed Racer 3D',      category: 'Racing', size: '2x1', color: 'from-blue-600 to-indigo-700',  icon: 'fa-car-side',     likes: '92%', playable: false },
+  { id: 4, title: 'Temple Dash',         category: 'Action', size: '1x1', color: 'from-yellow-500 to-amber-700', icon: 'fa-person-hiking', likes: '91%', playable: false },
+  { id: 5, title: 'Slither Snake',       category: 'Arcade', size: '1x1', color: 'from-purple-500 to-pink-600',  icon: 'fa-staff-snake',  likes: '89%', playable: false },
+  { id: 6, title: 'Brain Puzzle Deluxe', category: 'Puzzle', size: '2x1', color: 'from-cyan-500 to-blue-500',   icon: 'fa-brain',        likes: '96%', playable: false },
+  { id: 7, title: 'Ludo Master',         category: 'Puzzle', size: '1x1', color: 'from-rose-500 to-red-600',    icon: 'fa-dice',         likes: '88%', playable: false },
+  { id: 8, title: 'Zombie Survival',     category: 'Action', size: '1x2', color: 'from-stone-700 to-slate-900', icon: 'fa-biohazard',    likes: '94%', playable: false },
+  { id: 9, title: 'Fruit Ninja Slash',   category: 'Arcade', size: '1x1', color: 'from-lime-500 to-emerald-600',icon: 'fa-apple-whole',  likes: '93%', playable: false },
+  { id:10, title: 'Super Bike Stunts',   category: 'Racing', size: '2x1', color: 'from-orange-500 to-red-600',  icon: 'fa-motorcycle',   likes: '90%', playable: false },
+  { id:11, title: 'Tic Tac Toe Pro',     category: 'Puzzle', size: '1x1', color: 'from-indigo-500 to-purple-600',icon: 'fa-xmarks-lines', likes: '85%', playable: false },
+  { id:12, title: 'Highway Moto',        category: 'Racing', size: '1x1', color: 'from-sky-400 to-blue-600',    icon: 'fa-gauge-high',   likes: '87%', playable: false },
 ];
 
 // ─── Size → tailwind col/row span ────────────────────────────────────────────
@@ -335,10 +339,217 @@ function PistolGame({ containerRef }) {
   );
 }
 
+// ─── Animated mini-preview for Pistol Duel card ──────────────────────────────
+function DuelPreviewCanvas() {
+  const ref = useRef(null);
+  const rafRef = useRef(null);
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const ctx = c.getContext('2d');
+    const W = c.width, H = c.height;
+    // Simple animated demo: two guns bouncing, bullets flying
+    const state = {
+      p: { x: W*0.25, y: H*0.5, vx: 0.8, vy: 0.4, a: 0, spin: 0.03 },
+      e: { x: W*0.75, y: H*0.5, vx:-0.7, vy:-0.5, a: Math.PI, spin:-0.025 },
+      bullets: [],
+      t: 0,
+    };
+    const draw = () => {
+      state.t++;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0,0,W,H);
+      // border
+      ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 2;
+      ctx.strokeRect(1,1,W-2,H-2);
+
+      const moveDot = (d) => {
+        d.x += d.vx; d.y += d.vy; d.a += d.spin;
+        if (d.x < 12 || d.x > W-12) { d.vx *= -1; d.spin *= -1; }
+        if (d.y < 8  || d.y > H-8)  { d.vy *= -1; d.spin *= -1; }
+      };
+      moveDot(state.p); moveDot(state.e);
+
+      // Spawn bullet every 60 frames
+      if (state.t % 60 === 0) {
+        const dx = state.e.x - state.p.x, dy = state.e.y - state.p.y;
+        const l = Math.sqrt(dx*dx+dy*dy)||1;
+        state.bullets.push({ x: state.p.x, y: state.p.y, vx:(dx/l)*3, vy:(dy/l)*3, c:'#fbbf24' });
+        state.bullets.push({ x: state.e.x, y: state.e.y, vx:-(dx/l)*3, vy:-(dy/l)*3, c:'#f97316' });
+      }
+
+      state.bullets = state.bullets.filter(b => b.x > 0 && b.x < W && b.y > 0 && b.y < H);
+      state.bullets.forEach(b => {
+        b.x += b.vx; b.y += b.vy;
+        ctx.fillStyle = b.c;
+        ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill();
+      });
+
+      const drawG = (d, col) => {
+        ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
+        ctx.shadowBlur = 10; ctx.shadowColor = col;
+        ctx.fillStyle = col;
+        ctx.fillRect(-12, -4, 20, 8);
+        ctx.fillRect(8, -3, 10, 6);
+        ctx.restore();
+      };
+      drawG(state.p, '#38bdf8');
+      drawG(state.e, '#ef4444');
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+  return <canvas ref={ref} width={260} height={160} className="w-full h-full rounded-xl opacity-80 group-hover:opacity-100 transition-opacity" />;
+}
+
+// ─── Animated mini-preview for Bike Racer card ───────────────────────────────
+function BikePreviewCanvas() {
+  const ref = useRef(null);
+  const rafRef = useRef(null);
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const ctx = c.getContext('2d');
+    const W = c.width, H = c.height;
+    let t = 0;
+    const draw = () => {
+      t++;
+      // Sky gradient
+      const sky = ctx.createLinearGradient(0,0,0,H*0.55);
+      const night = Math.sin(t * 0.008) < 0;
+      sky.addColorStop(0, night ? '#0a0a1a' : '#0ea5e9');
+      sky.addColorStop(1, night ? '#1a1a3a' : '#7dd3fc');
+      ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+
+      // Sun / moon
+      const sunX = W*0.75 + Math.cos(t*0.008)*W*0.3;
+      const sunY = H*0.22 + Math.sin(t*0.008)*H*0.2;
+      ctx.fillStyle = night ? '#e2e8f0' : '#fef08a';
+      ctx.beginPath(); ctx.arc(sunX, sunY, 10, 0, Math.PI*2); ctx.fill();
+
+      // Ground
+      ctx.fillStyle = night ? '#0f1a0f' : '#1a5c22';
+      ctx.fillRect(0, H*0.55, W, H);
+
+      // Road strips (perspective)
+      for (let i = 0; i < 10; i++) {
+        const pct = (i+1)/10;
+        const ry = H*0.55 + pct*(H - H*0.55);
+        const rw = pct * W * 0.55;
+        ctx.fillStyle = i%2===0 ? '#3b3b3b' : '#4a4a4a';
+        ctx.fillRect(W/2 - rw/2, ry - pct*8, rw, pct*10);
+      }
+
+      // Road center dashes
+      for (let i = 0; i < 6; i++) {
+        const pct = (i + ((t*0.04)%1)) / 6;
+        const ry = H*0.55 + pct*(H - H*0.55);
+        const dw = pct * 6;
+        const dh = pct * 12;
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillRect(W/2 - dw/2, ry, dw, dh);
+      }
+
+      // Bike (simple)
+      const bx = W/2 + Math.sin(t*0.04)*W*0.08;
+      const by = H*0.82;
+      ctx.shadowBlur = 8; ctx.shadowColor = '#3b82f6';
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(bx-8, by-14, 16, 14);
+      ctx.fillRect(bx+6, by-10, 8, 6);
+      // wheels
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(bx+8, by, 6, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx-8, by, 6, 0, Math.PI*2); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    rafRef.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+  return <canvas ref={ref} width={260} height={160} className="w-full h-full rounded-xl opacity-85 group-hover:opacity-100 transition-opacity" />;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Game Card
 // ═══════════════════════════════════════════════════════════════════════════════
 function GameCard({ game, onOpen }) {
+  // Special Pistol Duel card with live animated preview
+  if (game.duel) {
+    return (
+      <div
+        className={`relative rounded-3xl overflow-hidden cursor-pointer shadow-xl group transition-all duration-250 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-2xl hover:z-10 ${SPAN_MAP[game.size] || 'col-span-1 row-span-1'}`}
+        onClick={() => onOpen(game)}
+        style={{ background: 'linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#1e3a5f 100%)' }}
+      >
+        {/* Animated preview canvas */}
+        <div className="absolute inset-0 flex items-center justify-center p-2 pointer-events-none">
+          <DuelPreviewCanvas />
+        </div>
+        {/* Overlay with game info */}
+        <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/40">
+          <div className="flex items-center justify-between">
+            <span className="bg-cyan-400 text-slate-900 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-lg shadow-cyan-400/30 animate-pulse">
+              🔫 #1 HOT
+            </span>
+            <span className="text-white/80 text-xs font-semibold bg-black/30 px-2 py-0.5 rounded-full backdrop-blur-sm">{game.category}</span>
+          </div>
+          <div>
+            <h3 className="text-white font-extrabold text-lg drop-shadow-lg mb-0.5" style={{ fontFamily: 'Fredoka, sans-serif', textShadow: '0 0 15px #38bdf8' }}>
+              Pistol Duel
+            </h3>
+            <p className="text-slate-300 text-[11px] mb-2">Player vs CPU · 5 Levels · Recoil Physics</p>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-xs"><i className="fa-solid fa-thumbs-up text-xs mr-1 text-cyan-400" />{game.likes}</span>
+              <span className="bg-cyan-500 text-white text-xs font-bold px-3 py-1 rounded-xl shadow flex items-center gap-1">
+                <i className="fa-solid fa-play text-[10px]" /> Play
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Bike Racer special card ─────────────────────────────────────────────────
+  if (game.bike) {
+    return (
+      <div
+        className={`relative rounded-3xl overflow-hidden cursor-pointer shadow-xl group transition-all duration-250 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-2xl hover:z-10 ${SPAN_MAP[game.size] || 'col-span-1 row-span-1'}`}
+        onClick={() => onOpen(game)}
+        style={{ background: 'linear-gradient(135deg,#0f172a 0%,#0c4a6e 50%,#0e7490 100%)' }}
+      >
+        {/* Road preview animation */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <BikePreviewCanvas />
+        </div>
+        {/* Info overlay */}
+        <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/50">
+          <div className="flex items-center justify-between">
+            <span className="bg-orange-400 text-slate-900 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-lg shadow-orange-400/30 animate-pulse">
+              🏍️ #2 RACE
+            </span>
+            <span className="text-white/80 text-xs font-semibold bg-black/30 px-2 py-0.5 rounded-full backdrop-blur-sm">{game.category}</span>
+          </div>
+          <div>
+            <h3 className="text-white font-extrabold text-lg drop-shadow-lg mb-0.5" style={{ fontFamily: 'Fredoka, sans-serif', textShadow: '0 0 15px #38bdf8' }}>
+              3D Highway Bike Racer
+            </h3>
+            <p className="text-slate-300 text-[11px] mb-2">True 3D WebGL · Cockpit View · Traffic & Near-Miss</p>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-xs"><i className="fa-solid fa-thumbs-up text-xs mr-1 text-orange-400" />{game.likes}</span>
+              <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-xl shadow flex items-center gap-1">
+                <i className="fa-solid fa-play text-[10px]" /> Race
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Standard card
   return (
     <div
       className={`relative rounded-3xl overflow-hidden cursor-pointer shadow-lg group transition-all duration-250 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-2xl hover:z-10 ${SPAN_MAP[game.size] || 'col-span-1 row-span-1'}`}
@@ -512,56 +723,55 @@ export default function WebGame() {
           className="fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2 md:p-6 backdrop-blur-md"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
-          <div className="bg-slate-900 rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col max-h-[95vh]">
+          <div className="bg-slate-900 rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col" style={{ height: 'min(92vh, 680px)' }}>
             {/* Modal header */}
-            <div className="bg-slate-800/90 px-6 py-4 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0">
+            <div className="bg-slate-800/90 px-4 py-3 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <span className="bg-red-500/20 text-red-400 p-2 rounded-xl text-lg">
                   <i className={`fa-solid ${modal.icon || 'fa-gamepad'}`} />
                 </span>
                 <div>
-                  <h2 className="text-white font-extrabold text-xl md:text-2xl" style={{ fontFamily: 'Fredoka, sans-serif' }}>{modal.title}</h2>
+                  <h2 className="text-white font-extrabold text-lg md:text-xl" style={{ fontFamily: 'Fredoka, sans-serif' }}>{modal.title}</h2>
                   <p className="text-slate-400 text-xs">
-                    {modal.playable ? 'Master your aim, hit moving targets & reload fast!' : 'Game simulation mode.'}
+                    {modal.duel ? 'Player vs CPU · Click to shoot · Recoil physics' : modal.bike ? 'Day/Night Road · 3 AI Rivals · Collect Coins' : modal.playable ? 'Shoot targets · Aim with mouse · R to reload' : 'Coming soon!'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleFullscreen}
-                  className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-700/50 transition"
-                  title="Fullscreen"
-                >
+                <button onClick={toggleFullscreen} className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-700/50 transition" title="Fullscreen">
                   <i className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'} text-lg`} />
                 </button>
-                <button
-                  onClick={closeModal}
-                  className="text-slate-400 hover:text-red-400 p-2 rounded-xl hover:bg-slate-700/50 transition text-xl"
-                >
+                <button onClick={closeModal} className="text-slate-400 hover:text-red-400 p-2 rounded-xl hover:bg-slate-700/50 transition text-xl">
                   <i className="fa-solid fa-xmark" />
                 </button>
               </div>
             </div>
 
-            {/* Game area */}
+            {/* Game area — explicit height so children can use 100% */}
             <div
               ref={gameAreaRef}
-              className="flex-1 bg-slate-950 relative overflow-hidden"
-              style={{ minHeight: 400 }}
+              className="bg-slate-950 relative overflow-hidden"
+              style={{ flex: '1 1 auto', minHeight: 0 }}
             >
-              {modal.playable ? (
+              {modal.duel ? (
+                <PistolDuel onClose={closeModal} />
+              ) : modal.bike ? (
+                <BikeRacer onClose={closeModal} />
+              ) : modal.playable ? (
                 <PistolGame containerRef={gameAreaRef} />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-white p-8 text-center">
                   <i className="fa-solid fa-gamepad text-6xl text-cyan-400 mb-4 animate-bounce" />
                   <h3 className="text-2xl font-bold mb-2" style={{ fontFamily: 'Fredoka, sans-serif' }}>{modal.title}</h3>
-                  <p className="text-slate-400 text-sm mb-6 max-w-sm">This game is coming soon! Try the Pistol Target Shoot demo below.</p>
-                  <button
-                    onClick={() => setModal(GAMES_DATA[0])}
-                    className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold px-6 py-2.5 rounded-xl transition hover:scale-105"
-                  >
-                    Play Pistol Target Shoot
-                  </button>
+                  <p className="text-slate-400 text-sm mb-6 max-w-sm">This game is coming soon! Try our playable games below.</p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setModal(GAMES_DATA[0])} className="bg-cyan-500 hover:bg-cyan-600 text-white font-bold px-5 py-2.5 rounded-xl transition hover:scale-105">
+                      🔫 Pistol Duel
+                    </button>
+                    <button onClick={() => setModal(GAMES_DATA[1])} className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 rounded-xl transition hover:scale-105">
+                      🏍️ Bike Racer
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -572,11 +782,13 @@ export default function WebGame() {
                 <span><i className="fa-solid fa-thumbs-up text-emerald-400 mr-1" />{modal.likes} Likes</span>
                 <span><i className="fa-solid fa-gamepad text-cyan-400 mr-1" />HTML5 Canvas</span>
               </div>
-              {modal.playable && (
-                <span>
-                  Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">Mouse</kbd> Aim/Shoot &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">R</kbd> Reload
-                </span>
-              )}
+              {modal.duel ? (
+                <span>Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">Click / Tap</kbd> Shoot &bull; Gun recoil spins opposite</span>
+              ) : modal.bike ? (
+                <span>Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">W/↑/Hold Screen</kbd> Gas &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">S/↓</kbd> Brake &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">A/D</kbd> Steer</span>
+              ) : modal.playable ? (
+                <span>Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">Mouse</kbd> Aim/Shoot &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">R</kbd> Reload</span>
+              ) : null}
             </div>
           </div>
         </div>
