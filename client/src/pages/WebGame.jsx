@@ -534,9 +534,9 @@ function GameCard({ game, onOpen }) {
           </div>
           <div>
             <h3 className="text-white font-extrabold text-lg drop-shadow-lg mb-0.5" style={{ fontFamily: 'Fredoka, sans-serif', textShadow: '0 0 15px #38bdf8' }}>
-              3D Highway Bike Racer
+              3D Bike Racer
             </h3>
-            <p className="text-slate-300 text-[11px] mb-2">True 3D WebGL · Cockpit View · Traffic & Near-Miss</p>
+            <p className="text-slate-300 text-[11px] mb-2">Day/Night Road · 3 AI Rivals · Collect Coins</p>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 text-xs"><i className="fa-solid fa-thumbs-up text-xs mr-1 text-orange-400" />{game.likes}</span>
               <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-xl shadow flex items-center gap-1">
@@ -725,7 +725,7 @@ export default function WebGame() {
         >
           <div className="bg-slate-900 rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col" style={{ height: 'min(92vh, 680px)' }}>
             {/* Modal header */}
-            <div className="bg-slate-800/90 px-4 py-3 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0">
+            <div className="bg-slate-800/90 px-5 py-3.5 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <span className="bg-red-500/20 text-red-400 p-2 rounded-xl text-lg">
                   <i className={`fa-solid ${modal.icon || 'fa-gamepad'}`} />
@@ -733,15 +733,23 @@ export default function WebGame() {
                 <div>
                   <h2 className="text-white font-extrabold text-lg md:text-xl" style={{ fontFamily: 'Fredoka, sans-serif' }}>{modal.title}</h2>
                   <p className="text-slate-400 text-xs">
-                    {modal.duel ? 'Player vs CPU · Click to shoot · Recoil physics' : modal.bike ? 'Day/Night Road · 3 AI Rivals · Collect Coins' : modal.playable ? 'Shoot targets · Aim with mouse · R to reload' : 'Coming soon!'}
+                    {modal.duel ? 'Player vs CPU · Click to shoot · Recoil physics' : modal.bike ? 'Traffic Rider 3D · First-Person Superbike · Highway Traffic' : modal.playable ? 'Shoot targets · Aim with mouse · R to reload' : 'Coming soon!'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={toggleFullscreen} className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-700/50 transition" title="Fullscreen">
+                <button
+                  onClick={toggleFullscreen}
+                  className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-700/50 transition"
+                  title="Fullscreen"
+                >
                   <i className={`fa-solid ${fullscreen ? 'fa-compress' : 'fa-expand'} text-lg`} />
                 </button>
-                <button onClick={closeModal} className="text-slate-400 hover:text-red-400 p-2 rounded-xl hover:bg-slate-700/50 transition text-xl">
+                <button
+                  onClick={closeModal}
+                  className="text-slate-400 hover:text-red-400 p-2 rounded-xl hover:bg-slate-700/50 transition text-xl"
+                  title="Close"
+                >
                   <i className="fa-solid fa-xmark" />
                 </button>
               </div>
@@ -750,8 +758,8 @@ export default function WebGame() {
             {/* Game area — explicit height so children can use 100% */}
             <div
               ref={gameAreaRef}
-              className="bg-slate-950 relative overflow-hidden"
-              style={{ flex: '1 1 auto', minHeight: 0 }}
+              className="flex-1 bg-slate-950 relative overflow-hidden"
+              style={{ minHeight: 480 }}
             >
               {modal.duel ? (
                 <PistolDuel onClose={closeModal} />
@@ -789,6 +797,11 @@ export default function WebGame() {
               ) : modal.playable ? (
                 <span>Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">Mouse</kbd> Aim/Shoot &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">R</kbd> Reload</span>
               ) : null}
+              {modal.playable && (
+                <span>
+                  Controls: <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">Mouse</kbd> Aim/Shoot &bull; <kbd className="bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded">R</kbd> Reload
+                </span>
+              )}
             </div>
           </div>
         </div>

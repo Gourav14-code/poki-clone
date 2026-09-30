@@ -24,6 +24,8 @@ export default function CyberCursor() {
   const mousePosRef = useRef({ x: -100, y: -100 });
   const animFrameRef = useRef(null);
 
+  const isVisibleRef = useRef(false);
+
   useEffect(() => {
     // Check if device supports fine pointer (mouse / trackpad), not touch-only
     const hasPointer = window.matchMedia('(pointer: fine)').matches;
@@ -38,7 +40,10 @@ export default function CyberCursor() {
     const handleMouseMove = (e) => {
       mousePosRef.current = { x: e.clientX, y: e.clientY };
       setPos({ x: e.clientX, y: e.clientY });
-      if (!isVisible) setIsVisible(true);
+      if (!isVisibleRef.current) {
+        isVisibleRef.current = true;
+        setIsVisible(true);
+      }
 
       // Check if hovering interactive element or text input
       const target = e.target;
@@ -51,9 +56,6 @@ export default function CyberCursor() {
         );
         setIsHovered(!!interactive);
         setIsText(!!textInput);
-      } else {
-        setIsHovered(false);
-        setIsText(false);
       }
     };
 
@@ -82,10 +84,12 @@ export default function CyberCursor() {
     };
 
     const handleMouseLeave = () => {
+      isVisibleRef.current = false;
       setIsVisible(false);
     };
 
     const handleMouseEnter = () => {
+      isVisibleRef.current = true;
       setIsVisible(true);
     };
 
@@ -128,7 +132,7 @@ export default function CyberCursor() {
       document.removeEventListener('mouseenter', handleMouseEnter);
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isVisible]);
+  }, []);
 
   if (!enabled || !isVisible || pos.x < 0 || pos.y < 0) return null;
 
