@@ -29,13 +29,13 @@ const RadialMotionBlurShader = {
     void main(){
       if(uSpeed<0.04){gl_FragColor=texture2D(tDiffuse,vUv);return;}
       vec2 dir=vUv-uCenter;
-      float blur=clamp(dot(dir,dir)*uSpeed*uStrength,0.,0.032);
-      vec4 col=vec4(0.);
+      float blur=clamp(dot(dir,dir)*uSpeed*uStrength,0.0,0.032);
+      vec4 col=vec4(0.0);
       for(int i=0;i<8;i++){
-        float t=float(i)/7.-.5;
-        col+=texture2D(tDiffuse,clamp(vUv-dir*(t*blur),0.,1.));
+        float t=float(i)/7.0-0.5;
+        col+=texture2D(tDiffuse,clamp(vUv-dir*(t*blur),vec2(0.0),vec2(1.0)));
       }
-      gl_FragColor=col/8.;
+      gl_FragColor=col*0.125;
     }
   `,
 };
@@ -86,6 +86,27 @@ class BikeAudioEngine {
   playNitro()       { this._ramp(120,520,'sawtooth',0.2,0.6); }
   playHorn()        { this._sfx(440,'sine',0.25,0.4); this._sfx(554,'sine',0.25,0.4); }
   playCrash()       { this._ramp(140,30,'square',0.5,0.9); }
+  playGlassShatter() {
+    if(!this.ctx) return;
+    try {
+      this._ramp(3400, 750, 'sine', 0.25, 0.4);
+      this._ramp(4800, 1100, 'triangle', 0.18, 0.35);
+      const sz = Math.floor(this.ctx.sampleRate * 0.35);
+      const nb = this.ctx.createBuffer(1, sz, this.ctx.sampleRate);
+      const d = nb.getChannelData(0);
+      for(let i=0; i<sz; i++) d[i] = (Math.random()*2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.045));
+      const ns = this.ctx.createBufferSource();
+      ns.buffer = nb;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'highpass';
+      f.frequency.value = 2200;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.32, this.ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+      ns.connect(f); f.connect(g); g.connect(this.ctx.destination);
+      ns.start();
+    } catch {}
+  }
   _sfx(freq,type,gain,dur) {
     if(!this.ctx) return;
     try {
@@ -186,6 +207,58 @@ function makeRadialTex(w=256,stops) {
   stops.forEach(([t,col])=>g.addColorStop(t,col));
   cx.fillStyle=g; cx.fillRect(0,0,w,w);
   return new THREE.CanvasTexture(c);
+}
+
+// ── Checkered Finish Line & Gantry Textures ─────────────────────────────────
+function makeFinishLineTextures() {
+  // Road checkered surface strip
+  const cRoad = document.createElement('canvas'); cRoad.width = 1024; cRoad.height = 128;
+  const cxR = cRoad.getContext('2d');
+  const sq = 32;
+  for(let x = 0; x < 1024; x += sq) {
+    for(let y = 0; y < 128; y += sq) {
+      cxR.fillStyle = ((x / sq + y / sq) % 2 === 0) ? '#ffffff' : '#111317';
+      cxR.fillRect(x, y, sq, sq);
+    }
+  }
+  const roadTex = new THREE.CanvasTexture(cRoad);
+  roadTex.wrapS = THREE.RepeatWrapping; roadTex.repeat.set(4, 1);
+
+  // Overhead gantry banner
+  const cBan = document.createElement('canvas'); cBan.width = 1024; cBan.height = 256;
+  const cxB = cBan.getContext('2d');
+  const bg = cxB.createLinearGradient(0, 0, 1024, 0);
+  bg.addColorStop(0, '#0a0d14'); bg.addColorStop(0.5, '#1e2538'); bg.addColorStop(1, '#0a0d14');
+  cxB.fillStyle = bg; cxB.fillRect(0, 0, 1024, 256);
+  // Checkered border top & bottom
+  for(let x = 0; x < 1024; x += 32) {
+    cxB.fillStyle = (x / 32) % 2 === 0 ? '#f59e0b' : '#ffffff';
+    cxB.fillRect(x, 0, 32, 28);
+    cxB.fillRect(x, 228, 32, 28);
+  }
+  // Bold Finish Line text
+  cxB.fillStyle = '#ffffff';
+  cxB.font = '900 80px Impact, "Arial Black", sans-serif';
+  cxB.textAlign = 'center';
+  cxB.textBaseline = 'middle';
+  cxB.shadowColor = '#f59e0b';
+  cxB.shadowBlur = 20;
+  cxB.fillText('🏁  FINISH LINE  🏁', 512, 128);
+  const bannerTex = new THREE.CanvasTexture(cBan);
+
+  // Checkered flag texture
+  const cFlag = document.createElement('canvas'); cFlag.width = 256; cFlag.height = 160;
+  const cxF = cFlag.getContext('2d');
+  const fsq = 20;
+  for(let x = 0; x < 256; x += fsq) {
+    for(let y = 0; y < 160; y += fsq) {
+      cxF.fillStyle = ((x / fsq + y / fsq) % 2 === 0) ? '#ffffff' : '#0f172a';
+      cxF.fillRect(x, y, fsq, fsq);
+    }
+  }
+  const flagTex = new THREE.CanvasTexture(cFlag);
+
+  return { roadTex, bannerTex, flagTex };
 }
 
 // ── Procedural Traffic Vehicle (fallback when GLTF not available) ────────────
@@ -321,6 +394,148 @@ function makeRider() {
   return g;
 }
 
+// ── Shattered Mirror / Broken Glass Screen Edge Overlay ───────────────────────
+function ShatteredMirrorOverlay({ isGameOver }) {
+  return (
+    <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden select-none">
+      {/* 1. Impact Flash */}
+      <div className="absolute inset-0 bg-red-600/30 mix-blend-overlay animate-[ping_0.5s_cubic-bezier(0,0,0.2,1)_1]" />
+
+      {/* 2. Red / Dark Vignette with frosty broken edges */}
+      <div 
+        className="absolute inset-0"
+        style={{
+          background: 'radial-gradient(ellipse at center, transparent 38%, rgba(185, 28, 28, 0.2) 75%, rgba(8, 12, 22, 0.88) 100%)',
+          boxShadow: 'inset 0 0 90px rgba(220, 38, 38, 0.45), inset 0 0 170px rgba(0, 0, 0, 0.95)'
+        }}
+      />
+
+      {/* 3. Broken Glass SVG Fracture Lines & Perimeter Shards */}
+      <svg
+        className="w-full h-full absolute inset-0 filter drop-shadow-[0_0_6px_rgba(255,255,255,0.7)]"
+        viewBox="0 0 1000 600"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="glassShardGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.4)" />
+            <stop offset="30%" stopColor="rgba(186,230,253,0.18)" />
+            <stop offset="70%" stopColor="rgba(255,255,255,0.05)" />
+            <stop offset="100%" stopColor="rgba(147,197,253,0.25)" />
+          </linearGradient>
+
+          <linearGradient id="edgeShardGlow" x1="100%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
+            <stop offset="50%" stopColor="rgba(224,242,254,0.12)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
+          </linearGradient>
+
+          <filter id="crackGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* ── Outer Perimeter Mirror Shards (Framing borders around the screen & popup) ── */}
+        {/* Top-Left shards */}
+        <polygon points="0,0 220,0 140,85 0,160" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
+        <polygon points="0,160 140,85 105,195 0,260" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
+        <polygon points="140,85 220,0 310,0 240,95 185,115" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.4" />
+        <polygon points="0,0 90,0 0,90" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+
+        {/* Top-Right shards */}
+        <polygon points="780,0 1000,0 1000,150 865,85" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
+        <polygon points="865,85 1000,150 1000,270 890,205" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
+        <polygon points="690,0 780,0 865,85 765,110" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.4" />
+        <polygon points="910,0 1000,0 1000,90" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+
+        {/* Bottom-Left shards */}
+        <polygon points="0,440 120,490 0,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
+        <polygon points="0,600 120,490 230,535 280,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
+        <polygon points="120,490 190,445 230,535" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
+        <polygon points="0,520 80,600 0,600" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+
+        {/* Bottom-Right shards */}
+        <polygon points="1000,430 870,495 1000,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
+        <polygon points="1000,600 870,495 765,540 710,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
+        <polygon points="870,495 810,440 765,540" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
+        <polygon points="920,600 1000,520 1000,600" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+
+        {/* Top border jagged glass spikes */}
+        <polygon points="310,0 420,0 380,45" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
+        <polygon points="420,0 580,0 510,55 460,25" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
+        <polygon points="580,0 690,0 635,42" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
+
+        {/* Bottom border jagged glass spikes */}
+        <polygon points="280,600 450,600 375,555" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
+        <polygon points="450,600 590,600 525,545 480,575" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
+        <polygon points="590,600 710,600 645,555" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
+
+        {/* Left & Right border shards */}
+        <polygon points="0,260 95,310 0,370" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.4" />
+        <polygon points="1000,270 905,320 1000,380" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.4" />
+
+        {/* ── Primary Impact Spiderweb Center (around 500, 310) ── */}
+        <g filter="url(#crackGlow)" stroke="#f8fafc" strokeLinecap="round" strokeLinejoin="round">
+          {/* Inner concentric impact rings */}
+          <path d="M 485,300 L 515,295 L 530,318 L 510,332 L 480,325 Z" fill="rgba(255,255,255,0.3)" strokeWidth="2.4" />
+          <path d="M 465,285 L 525,278 L 555,315 L 535,348 L 475,342 L 452,310 Z" fill="none" strokeWidth="2.0" />
+          <path d="M 435,260 L 545,250 L 585,310 L 555,370 L 450,365 L 420,305 Z" fill="none" strokeWidth="1.8" />
+          <path d="M 395,230 L 575,215 L 625,305 L 580,400 L 415,395 L 375,295 Z" fill="none" strokeWidth="1.5" strokeDasharray="14 3" />
+
+          {/* Radial fracture lines shooting outward to edges */}
+          {/* To top-left corner */}
+          <polyline points="485,300 440,250 370,210 290,150 185,115 140,85 0,0" strokeWidth="2.2" />
+          <polyline points="440,250 380,225 320,180 240,95 220,0" strokeWidth="1.8" />
+          <polyline points="370,210 310,250 215,230 105,195 0,160" strokeWidth="1.8" />
+
+          {/* To top-right corner */}
+          <polyline points="515,295 565,245 640,195 730,145 810,105 865,85 1000,0" strokeWidth="2.2" />
+          <polyline points="565,245 615,210 685,160 765,110 780,0" strokeWidth="1.8" />
+          <polyline points="640,195 725,235 815,220 890,205 1000,150" strokeWidth="1.8" />
+
+          {/* To bottom-left corner */}
+          <polyline points="480,325 435,375 360,425 270,470 190,445 120,490 0,600" strokeWidth="2.2" />
+          <polyline points="435,375 390,410 315,480 230,535 280,600" strokeWidth="1.8" />
+          <polyline points="360,425 285,385 195,400 95,310 0,260" strokeWidth="1.8" />
+
+          {/* To bottom-right corner */}
+          <polyline points="510,332 555,380 630,430 720,475 810,440 870,495 1000,600" strokeWidth="2.2" />
+          <polyline points="555,380 605,415 680,485 765,540 710,600" strokeWidth="1.8" />
+          <polyline points="630,430 715,390 805,405 905,320 1000,270" strokeWidth="1.8" />
+
+          {/* Top cardinal cracks */}
+          <polyline points="500,280 495,200 510,130 460,25 420,0" strokeWidth="1.8" />
+          <polyline points="510,130 545,75 510,55 580,0" strokeWidth="1.5" />
+
+          {/* Bottom cardinal cracks */}
+          <polyline points="495,345 505,430 490,500 525,545 450,600" strokeWidth="1.8" />
+          <polyline points="490,500 460,550 375,555" strokeWidth="1.5" />
+
+          {/* Left cardinal cracks */}
+          <polyline points="452,310 370,300 280,320 180,310 95,310 0,310" strokeWidth="2.0" />
+          
+          {/* Right cardinal cracks */}
+          <polyline points="555,315 640,310 735,330 830,315 905,320 1000,320" strokeWidth="2.0" />
+        </g>
+
+        {/* Small floating fractured glass dots / glints */}
+        {[
+          [480, 275, 4], [528, 290, 3], [540, 328, 5], [475, 335, 4],
+          [440, 270, 3], [560, 260, 4], [430, 350, 4], [570, 360, 5],
+          [350, 210, 6], [650, 205, 5], [340, 430, 6], [660, 420, 5],
+          [210, 140, 7], [790, 135, 7], [200, 460, 7], [800, 470, 7],
+        ].map(([cx, cy, r], i) => (
+          <circle key={i} cx={cx} cy={cy} r={r} fill="#ffffff" opacity={0.65} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 // ── 5-Gear Superbike Calibration (0→200 km/h in ~8 seconds) ───────────────────
 const GEARS = [
   { shift:  42, redline:  55, torque: 46, engBrake: 50 }, // G1: 0–42 km/h in ~1.0s (strong launch)
@@ -338,21 +553,35 @@ export default function BikeRacer({ onClose }) {
   const audio = audioRef.current;
   const rafRef = useRef(null);
 
+  const LEVEL_DISTANCES = [1000, 1500, 2000, 2500, 3000]; // Level 1: 1.0km, Level 2: 1.5km, +0.5km step per level
+  const formatDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m}m`);
+
   const stateRef = useRef({
     speed: 0, maxSpeed: 290, accelRate: 58, brakeRate: 90, friction: 16,
-    dist: 0, playerX: 2.1, playerLean: 0,
-    accel: false, brake: false, steer: 0,
+    dist: 0, playerX: 2.4, playerLean: 0,
+    accel: false, brake: false, steer: 0, steerVel: 0,
     nitroAvailable: 100, nitroActive: false, nitroTime: 0,
     score: 0, cameraMode: 'chase',
     gear: 0, // 5-gear system: 0=G1 … 4=G5
     invulnTime: 2.5, // 2.5s collision immunity grace period on start
     crashed: false, crashTime: 0,
-    crashPos: {x:2.1,y:0,z:0}, crashVel:{x:0,y:0,z:0}, crashRotVel:{x:0,y:0,z:0},
+    crashPos: {x:2.4,y:0,z:0}, crashVel:{x:0,y:0,z:0}, crashRotVel:{x:0,y:0,z:0},
+    riderPos: {x:2.4,y:0.9,z:0}, riderVel:{x:0,y:0,z:0}, riderRotVel:{x:0,y:0,z:0},
     isPaused: false,
+    level: 1,                 // current level 1–5
+    levelTargetDist: 1000,    // distance required for current level (1.0km)
+    levelTime: 0,             // elapsed race time for current level
+    levelComplete: false,     // level completion trigger lock
   });
 
-  const [phase, setPhase] = useState('playing');
-  const [hud,   setHud]   = useState({speed:0,dist:0,nitro:100,score:0,gear:1,rpm:0});
+  const [phase, setPhase] = useState('playing'); // 'playing' | 'gameover' | 'levelcomplete'
+  const [shattered, setShattered] = useState(false);
+  const [hud,   setHud]   = useState({
+    speed: 0, dist: 0, nitro: 100, score: 0, gear: 1, rpm: 0,
+    level: 1, targetDist: 1000, time: 0
+  });
+  const [levelTimes, setLevelTimes] = useState({}); // { 1: time, 2: time, ... }
+  const [currentLevelTime, setCurrentLevelTime] = useState(0);
   const [cameraMode, setCameraMode] = useState('chase');
   const [isPaused, setIsPaused] = useState(false);
   const [alert, setAlert] = useState(null);
@@ -360,10 +589,11 @@ export default function BikeRacer({ onClose }) {
   const [loading, setLoading] = useState(true);
 
   // Refs to Three.js objects so restartRace can reset transforms and vehicles without re-mounting
+  const sceneRef = useRef(null);
   const playerGroupRef = useRef(null);
+  const riderRef = useRef(null);
   const cameraRef = useRef(null);
   const resetVehiclesRef = useRef(null);
-
 
   const toggleCamera = useCallback(() => {
     setCameraMode(prev => {
@@ -377,6 +607,70 @@ export default function BikeRacer({ onClose }) {
     setAlert(msg); setTimeout(()=>setAlert(null), dur);
   }, []);
 
+  const restartRace = useCallback((resetLevel = false) => {
+    const s = stateRef.current;
+    if(resetLevel) {
+      s.level = 1;
+      s.levelTargetDist = LEVEL_DISTANCES[0];
+      setLevelTimes({});
+    }
+    Object.assign(s, {
+      speed:0, dist:0, playerX:2.4, playerLean:0,
+      accel:false, brake:false, steer:0, steerVel:0,
+      nitroAvailable:100, nitroActive:false, nitroTime:0,
+      score:0, crashed:false, crashTime:0, isPaused:false,
+      invulnTime: 2.5, // 2.5s collision immunity grace period on restart
+      gear:0, // Reset to G1 on replay
+      levelTime: 0,
+      levelComplete: false,
+      crashPos:{x:2.4,y:0,z:0},
+      crashVel:{x:0,y:0,z:0},
+      crashRotVel:{x:0,y:0,z:0},
+    });
+
+    // Reset all traffic vehicles far ahead down the road so none are sitting at player spawn
+    if(resetVehiclesRef.current) {
+      resetVehiclesRef.current();
+    }
+
+    // Reset Three.js playerGroup transforms
+    if(playerGroupRef.current) {
+      playerGroupRef.current.position.set(2.4, 0, 0);
+      playerGroupRef.current.rotation.set(0, 0, 0);
+      playerGroupRef.current.scale.set(1, 1, 1);
+    }
+    // Re-attach rider to playerGroup if detached during crash
+    if(riderRef.current && playerGroupRef.current) {
+      playerGroupRef.current.add(riderRef.current);
+      riderRef.current.position.set(0, 0.02, 0.08);
+      riderRef.current.rotation.set(0, 0, 0);
+    }
+    setShattered(false);
+    // Snap camera to start position so lerp doesn't drag from crash location
+    if(cameraRef.current) {
+      cameraRef.current.position.set(2.4, 1.9, 4.8);
+      cameraRef.current.rotation.set(0, 0, 0);
+    }
+    setPhase('playing'); setIsPaused(false);
+  }, []);
+
+  const nextLevel = useCallback(() => {
+    const s = stateRef.current;
+    if(s.level < 5) {
+      const nxt = s.level + 1;
+      s.level = nxt;
+      s.levelTargetDist = LEVEL_DISTANCES[nxt - 1];
+      restartRace(false);
+    } else {
+      // Completed all 5 levels - restart from level 1
+      restartRace(true);
+    }
+  }, [restartRace]);
+
+  const replayLevel = useCallback(() => {
+    restartRace(false);
+  }, [restartRace]);
+
   // Keyboard controls
   useEffect(() => {
     const dn = (e) => {
@@ -384,7 +678,15 @@ export default function BikeRacer({ onClose }) {
       const s = stateRef.current;
       if(s.crashed || phase === 'gameover') {
         if(['Space','Enter','KeyR'].includes(e.code)||e.key===' '||e.key==='r'||e.key==='R'||e.key==='Enter') {
-          restartRace();
+          restartRace(false);
+        }
+        return;
+      }
+      if(phase === 'levelcomplete') {
+        if(['Space','Enter'].includes(e.code)||e.key===' '||e.key==='Enter') {
+          nextLevel();
+        } else if(['KeyR'].includes(e.code)||e.key==='r'||e.key==='R') {
+          replayLevel();
         }
         return;
       }
@@ -407,7 +709,7 @@ export default function BikeRacer({ onClose }) {
     window.addEventListener('keydown',dn);
     window.addEventListener('keyup',up);
     return ()=>{ window.removeEventListener('keydown',dn); window.removeEventListener('keyup',up); };
-  }, [toggleCamera, phase]);
+  }, [toggleCamera, phase, restartRace, nextLevel, replayLevel]);
 
   const triggerNitro = () => {
     audio.init();
@@ -418,41 +720,12 @@ export default function BikeRacer({ onClose }) {
   };
 
   const togglePause = () => {
-    stateRef.current.isPaused = !stateRef.current.isPaused;
-    setIsPaused(p=>!p);
-  };
-
-  const restartRace = () => {
-    const s = stateRef.current;
-    Object.assign(s, {
-      speed:0, dist:0, playerX:2.1, playerLean:0,
-      accel:false, brake:false, steer:0,
-      nitroAvailable:100, nitroActive:false, nitroTime:0,
-      score:0, crashed:false, crashTime:0, isPaused:false,
-      invulnTime: 2.5, // 2.5s collision immunity grace period on restart
-      gear:0, // Reset to G1 on replay
-      crashPos:{x:2.1,y:0,z:0},
-      crashVel:{x:0,y:0,z:0},
-      crashRotVel:{x:0,y:0,z:0},
-    });
-
-    // Reset all traffic vehicles far ahead down the road so none are sitting at player spawn
-    if(resetVehiclesRef.current) {
-      resetVehiclesRef.current();
+    const nextPaused = !stateRef.current.isPaused;
+    stateRef.current.isPaused = nextPaused;
+    setIsPaused(nextPaused);
+    if(nextPaused) {
+      audio.update(0, false, false, false, 0, 0);
     }
-
-    // Reset Three.js playerGroup transforms
-    if(playerGroupRef.current) {
-      playerGroupRef.current.position.set(2.1, 0, 0);
-      playerGroupRef.current.rotation.set(0, 0, 0);
-      playerGroupRef.current.scale.set(1, 1, 1);
-    }
-    // Snap camera to start position so lerp doesn't drag from crash location
-    if(cameraRef.current) {
-      cameraRef.current.position.set(2.1, 1.9, 4.8);
-      cameraRef.current.rotation.set(0, 0, 0);
-    }
-    setPhase('playing'); setIsPaused(false);
   };
 
   // ── Three.js Scene & Game Loop ─────────────────────────────────────────────
@@ -463,11 +736,12 @@ export default function BikeRacer({ onClose }) {
 
     // Scene & Renderer
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
     scene.fog = new THREE.FogExp2('#e89a5c', 0.0033);
 
     const camera = new THREE.PerspectiveCamera(65, W/H, 0.1, 1000);
-    camera.position.set(2.1, 1.9, 4.8);
-    camera.lookAt(2.1, 1.1, -24);
+    camera.position.set(2.4, 1.9, 4.8);
+    camera.lookAt(2.4, 1.1, -24);
     cameraRef.current = camera; // expose to restartRace for snap-reset on replay
 
     const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance', stencil:false});
@@ -575,9 +849,72 @@ export default function BikeRacer({ onClose }) {
       plantTrees(t);
     }, undefined, ()=>plantTrees(null));
 
+    // ── Finish Line Gantry & Checkered Strip ──────────────────────────────────
+    const finishLineGroup = new THREE.Group();
+    const { roadTex, bannerTex, flagTex } = makeFinishLineTextures();
+
+    // Checkered strip on road
+    const finishStrip = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROAD_W, 3.5),
+      new THREE.MeshStandardMaterial({ map: roadTex, roughness: 0.6, metalness: 0.1 })
+    );
+    finishStrip.rotation.x = -Math.PI / 2;
+    finishStrip.position.set(0, 0.024, 0);
+    finishStrip.receiveShadow = true;
+    finishLineGroup.add(finishStrip);
+
+    // Gantry structure: 2 vertical pillars + top cross beam
+    const pillarMat = new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.9, roughness: 0.25 });
+    const cautionMat = new THREE.MeshStandardMaterial({ color: '#f59e0b', metalness: 0.7, roughness: 0.3 });
+
+    // Left & Right Pillars
+    [-1, 1].forEach(side => {
+      const px = side * (ROAD_W / 2 + 0.35);
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6.2, 0.5), pillarMat);
+      pillar.position.set(px, 3.1, 0);
+      pillar.castShadow = true;
+      finishLineGroup.add(pillar);
+
+      // Yellow caution rings on pillar
+      for(let y = 0.8; y < 5.8; y += 1.2) {
+        const ring = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.25, 0.54), cautionMat);
+        ring.position.set(px, y, 0);
+        finishLineGroup.add(ring);
+      }
+
+      // Checkered flag atop pillar
+      const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8), pillarMat);
+      flagPole.position.set(px, 7.0, 0);
+      finishLineGroup.add(flagPole);
+
+      const flagMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6, 1.0),
+        new THREE.MeshBasicMaterial({ map: flagTex, side: THREE.DoubleSide })
+      );
+      flagMesh.position.set(px + side * 0.8, 7.2, 0);
+      finishLineGroup.add(flagMesh);
+    });
+
+    // Cross beam spanning highway
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(ROAD_W + 1.2, 0.45, 0.6), pillarMat);
+    beam.position.set(0, 5.9, 0);
+    finishLineGroup.add(beam);
+
+    // Overhead Banner hanging down
+    const bannerMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROAD_W * 0.78, 1.9),
+      new THREE.MeshStandardMaterial({ map: bannerTex, roughness: 0.4, metalness: 0.2, side: THREE.DoubleSide })
+    );
+    bannerMesh.position.set(0, 4.8, 0);
+    finishLineGroup.add(bannerMesh);
+
+    finishLineGroup.position.set(0, 0, -500);
+    finishLineGroup.visible = false;
+    scene.add(finishLineGroup);
+
     // ── Player Bike ──────────────────────────────────────────────────────────
     const playerGroup = new THREE.Group();
-    playerGroup.position.set(2.1, 0, 0);
+    playerGroup.position.set(2.4, 0, 0);
     scene.add(playerGroup);
     playerGroupRef.current = playerGroup; // expose to restartRace for transform reset
 
@@ -592,6 +929,7 @@ export default function BikeRacer({ onClose }) {
 
     // Rider model (always visible immediately)
     const rider = makeRider();
+    riderRef.current = rider;
     playerGroup.add(rider);
 
     // Track wheel meshes and the GLTF bike scene
@@ -687,26 +1025,29 @@ export default function BikeRacer({ onClose }) {
     }
 
     // ── Traffic System ────────────────────────────────────────────────────────
-    // 4 lanes: left 2 = oncoming, right 2 = same-direction
+    // 4 lanes: left 2 = oncoming (travel toward +Z), right 2 = same-direction (travel toward -Z)
+    // Road is 16.5m wide. Center double yellow line is at X = 0.
+    // Inner oncoming lane is at x = -2.8 (clear 1.6m gap from center line, never crosses into player's lane).
+    // Inner player lane is at x = 2.4 (centered, safe margin from center line).
     const LANE_CONFIGS = [
-      {x:-5.8,oncoming:true, minSpd:72,maxSpd:108, len:12},  // Oncoming fast
-      {x:-2.1,oncoming:true, minSpd:58,maxSpd:85,  len:4.6}, // Oncoming slow
-      {x: 2.1,oncoming:false,minSpd:68,maxSpd:95,  len:4.6}, // Same-dir cruising
-      {x: 5.8,oncoming:false,minSpd:78,maxSpd:112, len:12},  // Same-dir fast
+      { x: -5.8, oncoming: true,  minSpd: 72, maxSpd: 108, len: 7.5 },  // Oncoming fast (outer left)
+      { x: -2.8, oncoming: true,  minSpd: 58, maxSpd: 85,  len: 4.6 }, // Oncoming slow (inner left, stays strictly within lane)
+      { x:  2.4, oncoming: false, minSpd: 68, maxSpd: 95,  len: 4.6 }, // Same-dir cruising (inner right / player lane)
+      { x:  5.8, oncoming: false, minSpd: 78, maxSpd: 112, len: 7.5 },  // Same-dir fast (outer right)
     ];
 
     const VEHICLE_COLORS = ['#d0d5dc','#0d1117','#1a2f70','#8b1a1a','#f0f4f8','#6b3d0f'];
 
     const vehicles = [];
 
-    // Load traffic templates — real 3D models with centered wrappers
+    // Load traffic templates — real 3D models with centered wrappers and strict lane-width limits
     const trafficTemplates = {};
     const TRAFFIC_MODELS = [
-      {key:'car',   url:'/models/ferrari.glb',  len:4.6},
-      {key:'suv',   url:'/models/suv.gltf',     len:4.8},
-      {key:'truck', url:'/models/truck.gltf',   len:7.2},
-      {key:'semi',  url:'/models/semi-truck.glb',len:12},
-      {key:'sedan', url:'/models/sedan.gltf',   len:4.5},
+      {key:'car',   url:'/models/ferrari.glb',   len:4.5, maxW:1.95},
+      {key:'suv',   url:'/models/suv.gltf',      len:4.7, maxW:2.00},
+      {key:'truck', url:'/models/truck.gltf',    len:5.6, maxW:2.08},
+      {key:'semi',  url:'/models/semi-truck.glb',len:7.5, maxW:2.12},
+      {key:'sedan', url:'/models/sedan.gltf',    len:4.5, maxW:1.95},
     ];
     let tmplLoadCount = 0;
 
@@ -734,8 +1075,14 @@ export default function BikeRacer({ onClose }) {
         const bb = new THREE.Box3().setFromObject(m);
         const sz = new THREE.Vector3(); bb.getSize(sz);
         const center = new THREE.Vector3(); bb.getCenter(center);
-        const sc = v.len / Math.max(sz.z, sz.x);
         
+        // Strict lane-fitting scale: length scaled to v.len, but width STRICTLY capped to v.maxW
+        // This ensures trucks and semis never spill outside their lane or overlap into other lanes
+        let sc = v.len / Math.max(sz.z, sz.x);
+        if(sz.x * sc > v.maxW) {
+          sc = v.maxW / sz.x;
+        }
+
         // Center the model inside a wrapper so rotation pivots around its true center
         const wrapper = new THREE.Group();
         m.scale.set(sc, sc, sc);
@@ -773,19 +1120,19 @@ export default function BikeRacer({ onClose }) {
 
       const vg = new THREE.Group();
       const visual = template.clone(true);
-
-      // All templates have front at +Z.
-      // Oncoming traffic (left lanes): travels toward +Z -> front points at player (+Z) -> rotation.y = 0
-      // Same-direction traffic (right lanes): travels forward toward -Z -> front points away (-Z) -> rotation.y = Math.PI
-      visual.rotation.y = lc.oncoming ? 0 : Math.PI;
+      visual.rotation.y = 0; // Visual template stays neutral at 0
       vg.add(visual);
 
-
-      // Contact shadow under vehicle
-      const vSh = new THREE.Mesh(new THREE.PlaneGeometry(2.5, lc.len*0.9+1), vShadowMat);
-      vSh.rotation.x=-Math.PI/2; vSh.position.y=.018;
+      // Contact shadow under vehicle accurately sized to vehicle footprint
+      const vSh = new THREE.Mesh(new THREE.PlaneGeometry(2.1, lc.len * 0.9 + 0.3), vShadowMat);
+      vSh.rotation.x = -Math.PI / 2;
+      vSh.position.y = 0.018;
       vg.add(vSh);
 
+      // Set vehicle orientation strictly on the parent group:
+      // Oncoming traffic (left lanes): travels toward +Z -> front points at player (+Z) -> rotation.y = 0
+      // Same-direction traffic (right lanes): travels forward toward -Z -> rear points at player (+Z) -> rotation.y = Math.PI
+      vg.rotation.y = lc.oncoming ? 0 : Math.PI;
       vg.position.set(lc.x, 0, zOff);
       scene.add(vg);
 
@@ -793,7 +1140,7 @@ export default function BikeRacer({ onClose }) {
         mesh: vg, lane: li, x: lc.x,
         isOncoming: lc.oncoming,
         speed: lc.minSpd + Math.random()*(lc.maxSpd-lc.minSpd),
-        len: lc.len, width: 2.1,
+        len: lc.len, width: 2.05,
         passed: false, active: true,
       };
       vehicles.push(vehicleData);
@@ -802,7 +1149,6 @@ export default function BikeRacer({ onClose }) {
 
     // Expose vehicle reset function so restartRace can reset all traffic far down highway
     resetVehiclesRef.current = () => {
-
       const initialZ = [-65, -175, -120, -240, -95, -190];
       const initialLanes = [0, 0, 1, 1, 2, 3];
       vehicles.forEach((v, idx) => {
@@ -813,6 +1159,7 @@ export default function BikeRacer({ onClose }) {
         v.x = lc.x;
         v.isOncoming = lc.oncoming;
         v.mesh.position.set(lc.x, 0, z);
+        // Strictly set parent rotation so same-dir vehicles always show rear and oncoming show front
         v.mesh.rotation.y = lc.oncoming ? 0 : Math.PI;
         v.speed = lc.minSpd + Math.random() * (lc.maxSpd - lc.minSpd);
         v.passed = false;
@@ -830,9 +1177,10 @@ export default function BikeRacer({ onClose }) {
     let lastT = performance.now();
 
     const animate = () => {
-      const now = performance.now();
-      const dt  = Math.min((now-lastT)/1000, .08);
-      lastT = now;
+      try {
+        const now = performance.now();
+        const dt  = Math.min((now-lastT)/1000, .08);
+        lastT = now;
 
       const s = stateRef.current;
       if(s.isPaused){ rafRef.current=requestAnimationFrame(animate); return; }
@@ -876,44 +1224,72 @@ export default function BikeRacer({ onClose }) {
           s.speed = Math.max(0, s.speed - coastFriction * dt);
         }
 
-        // Steering: snappy with flat minimum
-        const steerSpd = 1.8 + s.speed * 0.065;
-        s.playerX += s.steer * steerSpd * dt;
-        s.playerX  = Math.max(-ROAD_W/2+1.1, Math.min(ROAD_W/2-1.1, s.playerX));
+        // Crisp, agile steering with immediate response (no floatiness)
+        const steerSpd = 2.8 + Math.min(s.speed, 220) * 0.055;
+        const targetSteerVel = s.steer * steerSpd;
+        s.steerVel = s.steerVel || 0;
+        s.steerVel += (targetSteerVel - s.steerVel) * 32 * dt;
+        s.playerX += s.steerVel * dt;
+        s.playerX = Math.max(-ROAD_W/2 + 1.2, Math.min(ROAD_W/2 - 1.2, s.playerX));
 
-        // Lean: snappy lerp
-        const leanBase = Math.min(1, s.speed/20 + 0.35);
-        const targetLean = -s.steer * 0.4 * leanBase;
-        s.playerLean += (targetLean - s.playerLean) * 28 * dt;
+        // Controlled, realistic banking lean (CAPPED at 0.25 rad / ~14 degrees)
+        // Bike NEVER dips or clips into the asphalt surface
+        const leanTarget = -s.steer * 0.25 * Math.min(1, s.speed / 30 + 0.2);
+        const clampedLean = Math.max(-0.25, Math.min(0.25, leanTarget));
+        s.playerLean += (clampedLean - s.playerLean) * 22 * dt;
 
         s.dist  += (s.speed*1000/3600)*dt;
         s.score += Math.round(s.speed * .05 * dt);
+        if(!s.levelComplete) {
+          s.levelTime += dt;
+        }
 
         audio.update(s.speed, s.accel, s.brake, s.nitroActive, g, rpmRatio);
-
 
         // Emit tire smoke
         if((s.accel||s.nitroActive||(s.brake&&s.speed>75))&&s.speed>8){
           emitSmoke(s.nitroActive, s.speed);
           if(s.nitroActive||s.speed>155) emitSmoke(s.nitroActive, s.speed);
-
         }
       }
 
+      // ── Finish Line Position & Level Complete Detection ──────────────────────
+      const remDist = s.levelTargetDist - s.dist;
+      if(remDist <= 120 && remDist >= -20) {
+        finishLineGroup.visible = true;
+        finishLineGroup.position.z = -remDist;
+      } else {
+        finishLineGroup.visible = false;
+      }
+
+      // Check for level complete
+      if(!s.crashed && !s.levelComplete && s.dist >= s.levelTargetDist) {
+        s.levelComplete = true;
+        s.accel = false;
+        s.steer = 0;
+        s.steerVel = 0;
+        s.speed = Math.max(0, s.speed * 0.4); // controlled deceleration upon crossing finish line
+        const finalTime = Math.max(0.1, s.levelTime);
+        setCurrentLevelTime(finalTime);
+        setLevelTimes(prev => ({ ...prev, [s.level]: finalTime }));
+        setPhase('levelcomplete');
+        audio.playHorn();
+      }
+
       // ── Update Player Group ──────────────────────────────────────────────────
-      playerGroup.position.x = s.playerX;
-      playerGroup.rotation.z = s.playerLean;
-      playerGroup.rotation.y = 0; // Strictly facing -Z (forward)
-      rider.rotation.z = s.playerLean*.38;
+      if(!s.crashed) {
+        playerGroup.position.x = s.playerX;
+        // Slight elevation offset when leaning ensures tires, exhaust, and pegs NEVER clip into the road
+        playerGroup.position.y = Math.abs(s.playerLean) * 0.08;
+        playerGroup.rotation.z = s.playerLean;
+        playerGroup.rotation.y = 0; // Strictly facing -Z (forward)
+        rider.rotation.z = s.playerLean * 0.2;
+      }
 
-      // Wheel rolling animation (rotation.x = axle spin rate)
-      const rollDelta = (s.speed*1000/3600/0.31)*dt;
-      wheelMeshes.forEach(m=>{ m.rotation.x -= rollDelta; });
-
-      // ── Road Texture Scrolling (perfectly calibrated) ─────────────────────
+      // ── Road Texture Scrolling (forward motion rushing towards player) ────
       const moveDist = (s.speed*1000/3600)*dt;
       const texDelta = moveDist/25; // 400m / 16 repeats ≈ 25m per tile
-      rdiff.offset.y -= texDelta;
+      rdiff.offset.y += texDelta; // += moves road texture under wheels from horizon forward!
       rnorm.offset.y  = rdiff.offset.y;
       rrough.offset.y = rdiff.offset.y;
 
@@ -963,9 +1339,9 @@ export default function BikeRacer({ onClose }) {
         const hitW = (v.width+.9)/2;
         const hitL = (v.len+1.6)/2;
 
-        if(dx < hitW && dz < hitL && !s.crashed && (s.invulnTime || 0) <= 0) {
-          if(s.speed < 30 || v.isOncoming) {
-            triggerCrash(s); setPhase('gameover');
+        if(dx < hitW && dz < hitL && !s.crashed && !s.levelComplete && (s.invulnTime || 0) <= 0) {
+          if(s.speed < 30 || v.isOncoming || dx < hitW * 0.75) {
+            triggerCrash(s, v);
           } else {
             // Sideswipe: speed penalty instead of full crash
             s.speed = Math.max(0, s.speed*0.55);
@@ -974,9 +1350,8 @@ export default function BikeRacer({ onClose }) {
           }
         }
 
-
         // Near-miss bonus
-        if(!v.passed && v.mesh.position.z>0 && dx<hitW+1.4 && dz<hitL+1.2 && s.speed>80 && !s.crashed) {
+        if(!v.passed && !s.levelComplete && v.mesh.position.z>0 && dx<hitW+1.4 && dz<hitL+1.2 && s.speed>80 && !s.crashed) {
           v.passed=true;
           const bonus = v.isOncoming ? 280 : 160;
           s.score+=bonus; s.nitroAvailable=Math.min(100,s.nitroAvailable+18);
@@ -999,6 +1374,7 @@ export default function BikeRacer({ onClose }) {
 
           v.mesh.position.z = baseZ;
           v.mesh.position.x = lc2.x;
+          v.mesh.rotation.y = lc2.oncoming ? 0 : Math.PI; // Strictly preserve rear view for right lanes
           v.x = lc2.x;
           v.speed = lc2.minSpd + Math.random()*(lc2.maxSpd-lc2.minSpd);
           v.len = lc2.len;
@@ -1007,50 +1383,125 @@ export default function BikeRacer({ onClose }) {
 
       }
 
-      // ── Crash Tumble Animation ───────────────────────────────────────────────
-      if(s.crashed) {
-        s.crashTime+=dt; s.speed=Math.max(0,s.speed-100*dt);
-        s.crashPos.x+=s.crashVel.x*dt; s.crashPos.y+=s.crashVel.y*dt; s.crashPos.z+=s.crashVel.z*dt;
-        s.crashVel.y-=14*dt;
-        if(s.crashPos.y<.4){ s.crashPos.y=.4; s.crashVel.y*=-.42; s.crashVel.x*=.72; }
-        playerGroup.position.set(s.crashPos.x, s.crashPos.y, s.crashPos.z);
-        playerGroup.rotation.x+=s.crashRotVel.x*dt;
-        playerGroup.rotation.z+=s.crashRotVel.z*dt;
-      }
-
-      // ── Camera ───────────────────────────────────────────────────────────────
+      // ── Camera & Crash Dynamics ─────────────────────────────────────────────
       // ratio = 0→1 mapping of current speed over G5 ceiling (245 km/h)
       const ratio = Math.min(1, s.speed / 245);
 
-      if(s.cameraMode==='chase') {
-        // Perfect centred chase cam, directly behind bike
-        const targetX = s.playerX;
-        const targetY = 1.88+ratio*.18;
-        const targetZ = 4.35+ratio*.72;
-        camera.position.x += (targetX-camera.position.x)*15*dt;
-        camera.position.y += (targetY-camera.position.y)*10*dt;
-        camera.position.z += (targetZ-camera.position.z)*10*dt;
-        camera.rotation.z = -s.playerLean*.3; // Subtle banking tilt
-        camera.fov = 65+ratio*13;
-        camera.updateProjectionMatrix();
-        // High-speed micro-shake
-        if(s.speed>110&&!s.crashed){
-          camera.position.y+=(Math.random()-.5)*ratio*.03;
-          camera.position.x+=(Math.random()-.5)*ratio*.018;
+      // ── 3D Crash Simulation: Bike Tumble & Rider Ragdoll Physics ───────────────
+      if(s.crashed) {
+        s.crashTime += dt;
+        s.speed = Math.max(0, s.speed - 120 * dt);
+
+        // Bike 3D Tumbling & Ground Bounce
+        const gravity = 22;
+        s.crashVel.y -= gravity * dt;
+        s.crashPos.x += s.crashVel.x * dt;
+        s.crashPos.y += s.crashVel.y * dt;
+        s.crashPos.z += s.crashVel.z * dt;
+
+        if(s.crashPos.y <= 0.16) {
+          s.crashPos.y = 0.16;
+          if(s.crashVel.y < -1.5) {
+            s.crashVel.y = -s.crashVel.y * 0.32; // bounce
+          } else {
+            s.crashVel.y = 0;
+          }
+          // Asphalt sliding friction
+          s.crashVel.x *= Math.max(0, 1 - 4.5 * dt);
+          s.crashVel.z *= Math.max(0, 1 - 4.5 * dt);
+          s.crashRotVel.x *= Math.max(0, 1 - 3.8 * dt);
+          s.crashRotVel.y *= Math.max(0, 1 - 3.8 * dt);
+          s.crashRotVel.z *= Math.max(0, 1 - 3.8 * dt);
         }
-        camera.lookAt(s.playerX, 1.1, -24);
+
+        playerGroup.position.set(s.crashPos.x, s.crashPos.y, s.crashPos.z);
+        playerGroup.rotation.x += s.crashRotVel.x * dt;
+        playerGroup.rotation.y += s.crashRotVel.y * dt;
+        playerGroup.rotation.z += s.crashRotVel.z * dt;
+
+        // Rider Ragdoll 3D Physics (thrown off bike, slides and rolls on asphalt)
+        if(riderRef.current) {
+          s.riderVel.y -= 24 * dt; // gravity
+          s.riderPos.x += s.riderVel.x * dt;
+          s.riderPos.y += s.riderVel.y * dt;
+          s.riderPos.z += s.riderVel.z * dt;
+
+          if(s.riderPos.y <= 0.22) {
+            s.riderPos.y = 0.22;
+            if(s.riderVel.y < -1.8) {
+              s.riderVel.y = -s.riderVel.y * 0.24; // soft bounce
+            } else {
+              s.riderVel.y = 0;
+            }
+            // Asphalt ground roll friction
+            s.riderVel.x *= Math.max(0, 1 - 4.8 * dt);
+            s.riderVel.z *= Math.max(0, 1 - 4.8 * dt);
+            s.riderRotVel.x *= Math.max(0, 1 - 4.2 * dt);
+            s.riderRotVel.y *= Math.max(0, 1 - 4.2 * dt);
+            s.riderRotVel.z *= Math.max(0, 1 - 4.2 * dt);
+          }
+
+          riderRef.current.position.set(s.riderPos.x, s.riderPos.y, s.riderPos.z);
+          riderRef.current.rotation.x += s.riderRotVel.x * dt;
+          riderRef.current.rotation.y += s.riderRotVel.y * dt;
+          riderRef.current.rotation.z += s.riderRotVel.z * dt;
+        }
+
+        // Camera dramatic tracking during crash
+        const focusX = (s.crashPos.x + s.riderPos.x) * 0.5;
+        const focusZ = (s.crashPos.z + s.riderPos.z) * 0.5;
+        const targetCamX = focusX * 0.7;
+        const targetCamY = 2.4;
+        const targetCamZ = focusZ + 5.5;
+
+        camera.position.x += (targetCamX - camera.position.x) * 8 * dt;
+        camera.position.y += (targetCamY - camera.position.y) * 8 * dt;
+        camera.position.z += (targetCamZ - camera.position.z) * 8 * dt;
+
+        // Collision shockwave camera shake (intense at start, decays over 1.2s)
+        const shakeMag = Math.max(0, (1.2 - s.crashTime)) * 0.16;
+        if(shakeMag > 0.001) {
+          camera.position.x += (Math.random() - 0.5) * shakeMag;
+          camera.position.y += (Math.random() - 0.5) * shakeMag;
+        }
+        camera.lookAt(focusX, 0.45, focusZ);
+
+        // After 1.7 seconds of realistic 3D tumbling, open the Game Over popup
+        if(s.crashTime >= 1.7 && phase !== 'gameover') {
+          setPhase('gameover');
+        }
       } else {
-        // First-person cockpit
-        camera.position.set(s.playerX, 1.29, .1);
-        camera.rotation.z = s.playerLean*.88;
-        camera.fov = 64+ratio*15;
-        camera.updateProjectionMatrix();
-        if(s.speed>75&&!s.crashed) camera.position.y+=(Math.random()-.5)*ratio*.022;
-        camera.lookAt(s.playerX, 1.06, -35);
+        // ── Normal Camera Tracking (when not crashed) ─────────────────────────
+        if(s.cameraMode==='chase') {
+          // Stable, forward-driving chase cam with smooth lateral follow
+          const targetX = s.playerX * 0.88; // Slight trailing lag creates natural 3D lane change feel
+          const targetY = 1.82 + ratio * 0.1;
+          const targetZ = 4.3 - ratio * 0.22; // Subtly tucks forward under acceleration to enhance forward speed rush
+          camera.position.x += (targetX - camera.position.x) * 12 * dt;
+          camera.position.y += (targetY - camera.position.y) * 10 * dt;
+          camera.position.z += (targetZ - camera.position.z) * 10 * dt;
+          camera.rotation.z = -s.playerLean * 0.24; // Subtle banking tilt
+          camera.fov = 64 + ratio * 5; // Controlled, clean speed FOV (no bike shrinking)
+          camera.updateProjectionMatrix();
+          // High-speed micro-shake
+          if(s.speed > 120){
+            camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
+            camera.position.x += (Math.random() - 0.5) * ratio * 0.012;
+          }
+          camera.lookAt(s.playerX * 0.55, 1.1, -26);
+        } else {
+          // First-person cockpit
+          camera.position.set(s.playerX, 1.29, .1);
+          camera.rotation.z = s.playerLean * .88;
+          camera.fov = 64 + ratio * 8;
+          camera.updateProjectionMatrix();
+          if(s.speed > 75) camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
+          camera.lookAt(s.playerX, 1.06, -35);
+        }
       }
 
       // Motion blur strength proportional to speed
-      blurPass.uniforms.uSpeed.value = ratio;
+      blurPass.uniforms.uSpeed.value = ratio * 0.7;
 
       // HUD: gear comes directly from physics state (1-indexed for display: 1 to 5)
       // RPM = position within current gear band (0 = just shifted in, 1 = redline / ready to upshift)
@@ -1060,21 +1511,83 @@ export default function BikeRacer({ onClose }) {
       const rpm = Math.min(1, Math.max(0, (s.speed - prevShift) / (curG.shift - prevShift)));
       const gear = gIdx + 1; // display as 1–5
 
+      setHud({
+        speed: Math.round(s.speed),
+        dist: Math.min(s.levelTargetDist, Math.round(s.dist)),
+        nitro: Math.round(s.nitroAvailable),
+        score: s.score,
+        gear,
+        rpm,
+        level: s.level,
+        targetDist: s.levelTargetDist,
+        time: s.levelTime
+      });
 
-      setHud({speed:Math.round(s.speed), dist:Math.round(s.dist), nitro:Math.round(s.nitroAvailable), score:s.score, gear, rpm});
 
+      try {
+        composer.render();
+      } catch (err) {
+        try { renderer.render(scene, camera); } catch {}
+      }
+    } catch (err) {
+      console.error('BikeRacer animation error:', err);
+      try { renderer.render(scene, camera); } catch {}
+    }
+    rafRef.current = requestAnimationFrame(animate);
+  };
 
-      composer.render();
-      rafRef.current = requestAnimationFrame(animate);
-    };
-
-    function triggerCrash(s) {
+    function triggerCrash(s, hitVehicle = null) {
       if(s.crashed) return;
-      s.crashed=true; s.crashTime=0;
-      s.crashPos={x:s.playerX, y:1.1, z:0};
-      s.crashVel={x:(Math.random()-.5)*6, y:6.5, z:-Math.max(4,s.speed*.04)};
-      s.crashRotVel={x:6+Math.random()*4, y:(Math.random()-.5)*4, z:7+Math.random()*4};
+      s.crashed = true;
+      s.crashTime = 0;
+      setShattered(true);
+
+      const fwd = Math.max(s.speed * 0.08, 3.5);
+      const sideDir = hitVehicle ? (s.playerX >= hitVehicle.x ? 1 : -1) : (s.steer !== 0 ? Math.sign(s.steer) : (Math.random() > 0.5 ? 1 : -1));
+
+      // Bike initial crash tumble physics
+      s.crashPos = { x: s.playerX, y: 0.12, z: 0 };
+      s.crashVel = {
+        x: sideDir * (3.5 + Math.random() * 2.5),
+        y: 4.8 + Math.random() * 2.2, // bike pops up into air
+        z: hitVehicle?.isOncoming ? 4.5 : -fwd * 0.7
+      };
+      s.crashRotVel = {
+        x: 6.5 + Math.random() * 4,
+        y: (Math.random() - 0.5) * 6,
+        z: -sideDir * (7.5 + Math.random() * 4) // flips sideways
+      };
+
+      // Rider ejection physics: detaches from bike and thrown onto pavement
+      if(riderRef.current && sceneRef.current) {
+        const wPos = new THREE.Vector3();
+        const wQuat = new THREE.Quaternion();
+        riderRef.current.getWorldPosition(wPos);
+        riderRef.current.getWorldQuaternion(wQuat);
+        sceneRef.current.add(riderRef.current);
+        riderRef.current.position.copy(wPos);
+        riderRef.current.quaternion.copy(wQuat);
+
+        s.riderPos = { x: wPos.x, y: Math.max(0.8, wPos.y), z: wPos.z };
+        s.riderVel = {
+          x: sideDir * (2.2 + Math.random() * 2) + (s.steerVel * 0.3),
+          y: 5.8 + Math.random() * 2.5, // thrown forward over handlebars
+          z: hitVehicle?.isOncoming ? 1.5 : -Math.max(7, fwd * 1.2) // thrown forward
+        };
+        s.riderRotVel = {
+          x: 9 + Math.random() * 5, // front flips
+          y: (Math.random() - 0.5) * 6,
+          z: (Math.random() - 0.5) * 6
+        };
+      }
+
       audio.playCrash();
+      audio.playGlassShatter();
+
+      // Crash smoke & spark bursts
+      for(let p = 0; p < 25; p++) {
+        emitSmoke(true, 120);
+      }
     }
 
     rafRef.current = requestAnimationFrame(animate);
@@ -1128,6 +1641,7 @@ export default function BikeRacer({ onClose }) {
         )}
 
         {/* ── HUD (Playing) ── */}
+        {/* ── HUD (Playing) ── */}
         {phase==='playing' && (
           <div className="absolute inset-0 pointer-events-none z-30 p-3 md:p-5 flex flex-col justify-between">
 
@@ -1150,6 +1664,38 @@ export default function BikeRacer({ onClose }) {
                 </button>
               </div>
 
+              {/* Center Scoreboard: Level, Race Distance / Target, Time, Remaining */}
+              <div className="flex flex-col items-center pointer-events-auto">
+                <div className="flex items-center gap-2.5 bg-black/65 border border-amber-500/40 px-3.5 py-1.5 rounded-full backdrop-blur-md shadow-2xl">
+                  <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-black font-black text-xs px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+                    LVL {hud.level}/5
+                  </span>
+                  <div className="flex items-center gap-1 font-mono text-xs">
+                    <span className="text-white/60">DIST:</span>
+                    <span className="text-emerald-400 font-bold">{formatDist(hud.dist)}</span>
+                    <span className="text-white/40">/</span>
+                    <span className="text-slate-300 font-bold">{formatDist(hud.targetDist)}</span>
+                  </div>
+                  <span className="text-white/20">|</span>
+                  <div className="flex items-center gap-1 font-mono text-xs">
+                    <span className="text-white/60">REMAIN:</span>
+                    <span className="text-amber-300 font-bold">{formatDist(Math.max(0, hud.targetDist - hud.dist))}</span>
+                  </div>
+                  <span className="text-white/20">|</span>
+                  <div className="flex items-center gap-1 font-mono text-xs">
+                    <span className="text-cyan-300 font-bold">⏱️ {(hud.time || 0).toFixed(1)}s</span>
+                  </div>
+                </div>
+
+                {/* Race Progress Bar */}
+                <div className="w-52 h-1.5 bg-slate-900/80 rounded-full mt-1 overflow-hidden border border-white/10 backdrop-blur-sm">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-amber-400 to-emerald-400 transition-all duration-75"
+                    style={{ width: `${Math.min(100, (hud.dist / (hud.targetDist || 100)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
               {/* Right: Speedometer, Score, Nitro */}
               <div className="flex flex-col items-end gap-1.5 pointer-events-auto">
                 {/* Speed pill */}
@@ -1160,8 +1706,6 @@ export default function BikeRacer({ onClose }) {
                   <span className="text-slate-300 text-[11px] font-mono">G{hud.gear}</span>
                   <span className="text-white/30 text-xs">|</span>
                   <span className="text-amber-400 text-[11px]">🏆{hud.score}</span>
-                  <span className="text-white/30 text-xs">|</span>
-                  <span className="text-sky-300 text-[11px]">🛣️{hud.dist}m</span>
                 </div>
 
                 {/* RPM bar */}
@@ -1229,23 +1773,152 @@ export default function BikeRacer({ onClose }) {
           </div>
         )}
 
+        {/* ── Level Completed Popup (Levels 1 to 4) ── */}
+        {phase === 'levelcomplete' && stateRef.current.level < 5 && (
+          <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-3xl mb-3 shadow-[0_0_30px_rgba(16,185,129,0.4)] animate-bounce">
+              🏁
+            </div>
+            <div className="inline-block bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-mono font-bold px-3 py-1 rounded-full mb-1">
+              FINISH LINE CROSSED
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-white tracking-wide mb-1" style={{fontFamily:'Fredoka,sans-serif'}}>
+              LEVEL {stateRef.current.level} COMPLETED!
+            </h2>
+            <p className="text-slate-300 text-xs md:text-sm max-w-sm mb-5">
+              Outstanding racing! You reached the required distance and crossed the finish line.
+            </p>
+
+            <div className="flex gap-4 md:gap-8 bg-slate-900/90 p-4 md:px-7 md:py-5 rounded-2xl border border-slate-700 shadow-2xl mb-6 backdrop-blur-md">
+              <div className="text-center">
+                <div className="text-slate-400 text-[11px] font-semibold tracking-wider">LEVEL</div>
+                <div className="text-xl md:text-2xl font-black font-mono text-cyan-400">{stateRef.current.level} / 5</div>
+              </div>
+              <div className="w-[1px] bg-slate-700 my-1"/>
+              <div className="text-center">
+                <div className="text-slate-400 text-[11px] font-semibold tracking-wider">DISTANCE</div>
+                <div className="text-xl md:text-2xl font-black font-mono text-amber-400">{formatDist(LEVEL_DISTANCES[stateRef.current.level - 1])}</div>
+              </div>
+              <div className="w-[1px] bg-slate-700 my-1"/>
+              <div className="text-center">
+                <div className="text-slate-400 text-[11px] font-semibold tracking-wider">TIME TAKEN</div>
+                <div className="text-xl md:text-2xl font-black font-mono text-emerald-400">{currentLevelTime.toFixed(2)}s</div>
+              </div>
+              <div className="w-[1px] bg-slate-700 my-1"/>
+              <div className="text-center">
+                <div className="text-slate-400 text-[11px] font-semibold tracking-wider">TOP SPEED</div>
+                <div className="text-xl md:text-2xl font-black font-mono text-rose-400">{hud.speed} KM/H</div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={nextLevel}
+                className="bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white font-black px-8 py-3 rounded-xl shadow-[0_0_25px_rgba(16,185,129,0.4)] active:scale-95 cursor-pointer text-sm md:text-base flex items-center justify-center gap-2">
+                <span>Next Level ({stateRef.current.level + 1}/5)</span>
+                <i className="fa-solid fa-arrow-right text-xs"/>
+              </button>
+              <button
+                onClick={replayLevel}
+                className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold px-6 py-3 rounded-xl active:scale-95 cursor-pointer text-sm flex items-center justify-center gap-2">
+                <i className="fa-solid fa-rotate-left text-xs"/>
+                <span>Replay</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Level 5 Final Completion Screen (Grand Champion) ── */}
+        {phase === 'levelcomplete' && stateRef.current.level >= 5 && (
+          <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+            <div className="w-20 h-20 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-4xl mb-3 shadow-[0_0_35px_rgba(245,158,11,0.5)] animate-bounce">
+              🏆
+            </div>
+            <div className="inline-block bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs font-mono font-bold px-4 py-1 rounded-full mb-1">
+              GRAND CHAMPION
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-white tracking-wide mb-1" style={{fontFamily:'Fredoka,sans-serif'}}>
+              ALL 5 LEVELS COMPLETED!
+            </h2>
+            <p className="text-slate-300 text-xs md:text-sm max-w-md mb-4">
+              Legendary ride! You completed every highway race distance and set record times across all 5 levels.
+            </p>
+
+            {/* Level times breakdown table */}
+            <div className="w-full max-w-md bg-slate-900/90 rounded-2xl border border-slate-700 shadow-2xl p-4 mb-5 text-left backdrop-blur-md">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5 pb-1 border-b border-slate-800 flex justify-between">
+                <span>Stage / Level</span>
+                <span>Distance</span>
+                <span>Completion Time</span>
+              </div>
+              <div className="space-y-1.5 text-xs font-mono">
+                {LEVEL_DISTANCES.map((d, idx) => {
+                  const lvl = idx + 1;
+                  const t = (lvl === 5 ? currentLevelTime : levelTimes[lvl]) || 0;
+                  return (
+                    <div key={lvl} className="flex justify-between items-center py-1 px-2 rounded bg-slate-800/40">
+                      <span className="font-bold text-white">Level {lvl}</span>
+                      <span className="text-slate-400">{formatDist(d)}</span>
+                      <span className="font-bold text-emerald-400">{t > 0 ? `${t.toFixed(2)}s` : '-'}</span>
+                    </div>
+                  );
+                })}
+                <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-700/80 font-bold text-sm">
+                  <span className="text-amber-400">TOTAL RACE TIME</span>
+                  <span className="text-amber-300 font-mono">
+                    {Object.values({ ...levelTimes, 5: currentLevelTime }).reduce((a, b) => a + b, 0).toFixed(2)}s
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => restartRace(true)}
+                className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:brightness-110 text-black font-black px-8 py-3 rounded-xl shadow-[0_0_25px_rgba(245,158,11,0.5)] active:scale-95 cursor-pointer text-sm md:text-base flex items-center justify-center gap-2">
+                <span>🏆 Play Again (Level 1)</span>
+              </button>
+              <button
+                onClick={replayLevel}
+                className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold px-6 py-3 rounded-xl active:scale-95 cursor-pointer text-sm flex items-center justify-center gap-2">
+                <i className="fa-solid fa-rotate-left text-xs"/>
+                <span>Replay Level 5</span>
+              </button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-3 rounded-xl cursor-pointer text-sm">
+                  Exit
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Shattered Mirror / Broken Glass Overlay (Active on crash and frames Game Over) ── */}
+        {shattered && (
+          <ShatteredMirrorOverlay isGameOver={phase === 'gameover'} />
+        )}
+
         {/* ── Game Over Screen ── */}
         {phase==='gameover' && (
-          <div className="absolute inset-0 z-40 bg-black/88 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
-            <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/55 flex items-center justify-center text-3xl mb-3 animate-bounce">💥</div>
-            <h2 className="text-3xl md:text-4xl font-black text-white mb-1" style={{fontFamily:'Fredoka,sans-serif'}}>CRASHED!</h2>
-            <p className="text-slate-300 text-xs max-w-xs mb-5">You hit highway traffic at high speed. Keep your line and overtake cleanly.</p>
-            <div className="flex gap-6 bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 mb-5 backdrop-blur-sm">
-              {[['SPEED',`${hud.speed} KM/H`,'text-rose-400'],['DISTANCE',`${hud.dist}m`,'text-amber-400'],['SCORE',hud.score,'text-emerald-400']].map(([l,v,cls])=>(
-                <div key={l} className="text-center">
-                  <div className="text-slate-400 text-[11px] font-semibold">{l}</div>
-                  <div className={`text-xl md:text-2xl font-black font-mono ${cls}`}>{v}</div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={restartRace} className="bg-gradient-to-r from-red-500 to-rose-600 hover:brightness-110 text-white font-bold px-7 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer text-sm">🔄 Play Again</button>
-              {onClose&&<button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-2.5 rounded-xl cursor-pointer text-sm">Exit</button>}
+          <div className="absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-[fadeIn_0.3s_ease-out]">
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/55 flex items-center justify-center text-3xl mb-3 animate-bounce">💥</div>
+              <h2 className="text-3xl md:text-4xl font-black text-white mb-1" style={{fontFamily:'Fredoka,sans-serif'}}>CRASHED!</h2>
+              <p className="text-slate-300 text-xs max-w-xs mb-5">You hit highway traffic at high speed. Keep your line and overtake cleanly.</p>
+              <div className="flex gap-6 bg-slate-900/85 p-4 rounded-2xl border border-slate-700/80 mb-5 backdrop-blur-md shadow-2xl">
+                {[['SPEED',`${hud.speed} KM/H`,'text-rose-400'],['DISTANCE',`${hud.dist}m`,'text-amber-400'],['SCORE',hud.score,'text-emerald-400']].map(([l,v,cls])=>(
+                  <div key={l} className="text-center">
+                    <div className="text-slate-400 text-[11px] font-semibold">{l}</div>
+                    <div className={`text-xl md:text-2xl font-black font-mono ${cls}`}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => restartRace(false)} className="bg-gradient-to-r from-red-500 to-rose-600 hover:brightness-110 text-white font-bold px-7 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer text-sm">🔄 Play Again</button>
+                {onClose&&<button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-2.5 rounded-xl cursor-pointer text-sm">Exit</button>}
+              </div>
             </div>
           </div>
         )}

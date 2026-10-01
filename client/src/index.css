@@ -28,6 +28,10 @@
 /* Active Hand Wave Motion */
 @keyframes armWaveMotion {
   0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-28deg); }
+  45% { transform: rotate(12deg); }
+  70% { transform: rotate(-32deg); }
+  85% { transform: rotate(5deg); }
   20% { transform: rotate(-30deg); }
   45% { transform: rotate(14deg); }
   70% { transform: rotate(-34deg); }
@@ -81,9 +85,14 @@
   animation: droneHover 3.5s ease-in-out infinite;
 }
 
+.animate-robot-wave {
+  animation: armWaveMotion 1.2s ease-in-out infinite;
+}
+
 /* Robot Right Arm - ONLY waves when hovered (or when wave-active class is added) */
 .robot-arm-right {
   transform-origin: 190px 140px;
+  animation: armWaveMotion 1.4s ease-in-out infinite;
   transform: rotate(0deg);
   transition: transform 0.4s ease;
 }
@@ -244,71 +253,5 @@ html.light .glass-nav {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
-}
-
-/* ==========================================================================
-   Cyber Circuit Animated Cursor System (/cursor/cyber-circuit-animated-cursor/)
-   Replaces default cursor and "click sign" (pointer hand) with Cyber Circuit
-   ========================================================================== */
-
-@keyframes cyberCircuitFrames {
-  0% {
-    cursor: -webkit-image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-    cursor: image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-  }
-  50% {
-    cursor: -webkit-image-set(url("/cursor/cyber-circuit-animated-cursor/frame1.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-    cursor: image-set(url("/cursor/cyber-circuit-animated-cursor/frame1.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-  }
-  100% {
-    cursor: -webkit-image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-    cursor: image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-  }
-}
-
-@media (pointer: fine) {
-  /* Fallback and native CSS cursor */
-  html, body {
-    cursor: -webkit-image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-    cursor: image-set(url("/cursor/cyber-circuit-animated-cursor/frame0.png") 4x) 1 1,
-            url("/cursor/cyber-circuit-animated-cursor/cursor.png") 1 1,
-            default;
-  }
-
-  /* Upgrade every click sign / pointer hand to the Cyber Circuit Pointer */
-  a,
-  button,
-  [role="button"],
-  input[type="submit"],
-  input[type="button"],
-  input[type="reset"],
-  input[type="checkbox"],
-  input[type="radio"],
-  select,
-  .cursor-pointer,
-  label[for],
-  summary,
-  [tabindex="0"] {
-    cursor: -webkit-image-set(url("/cursor/cyber-circuit-animated-cursor/pointer-large.png") 4x) 5 1,
-            url("/cursor/cyber-circuit-animated-cursor/pointer.png") 5 1,
-            pointer !important;
-    cursor: image-set(url("/cursor/cyber-circuit-animated-cursor/pointer-large.png") 4x) 5 1,
-            url("/cursor/cyber-circuit-animated-cursor/pointer.png") 5 1,
-            pointer !important;
-  }
 }
 
