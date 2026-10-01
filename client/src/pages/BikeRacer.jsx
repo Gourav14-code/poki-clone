@@ -86,6 +86,16 @@ class BikeAudioEngine {
   playNitro()       { this._ramp(120,520,'sawtooth',0.2,0.6); }
   playHorn()        { this._sfx(440,'sine',0.25,0.4); this._sfx(554,'sine',0.25,0.4); }
   playCrash()       { this._ramp(140,30,'square',0.5,0.9); }
+  playCoin() {
+    if(!this.ctx) return;
+    try {
+      if(this.ctx.state==='suspended') this.ctx.resume();
+      this._sfx(988, 'sine', 0.12, 0.1);
+      setTimeout(() => {
+        this._sfx(1318, 'triangle', 0.14, 0.18);
+      }, 50);
+    } catch {}
+  }
   playGlassShatter() {
     if(!this.ctx) return;
     try {
@@ -395,43 +405,33 @@ function makeRider() {
 }
 
 // ── Shattered Mirror / Broken Glass Screen Edge Overlay ───────────────────────
-function ShatteredMirrorOverlay({ isGameOver }) {
+// ── Subtle Realistic Corner Mirror Break Overlay ──────────────────────────────
+function ShatteredMirrorOverlay() {
   return (
     <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden select-none">
-      {/* 1. Impact Flash */}
-      <div className="absolute inset-0 bg-red-600/30 mix-blend-overlay animate-[ping_0.5s_cubic-bezier(0,0,0.2,1)_1]" />
-
-      {/* 2. Red / Dark Vignette with frosty broken edges */}
+      {/* 1. Subtle, gentle corner vignette (100% transparent in center) */}
       <div 
         className="absolute inset-0"
         style={{
-          background: 'radial-gradient(ellipse at center, transparent 38%, rgba(185, 28, 28, 0.2) 75%, rgba(8, 12, 22, 0.88) 100%)',
-          boxShadow: 'inset 0 0 90px rgba(220, 38, 38, 0.45), inset 0 0 170px rgba(0, 0, 0, 0.95)'
+          background: 'radial-gradient(ellipse at center, transparent 72%, rgba(2, 6, 23, 0.45) 100%)',
         }}
       />
 
-      {/* 3. Broken Glass SVG Fracture Lines & Perimeter Shards */}
+      {/* 2. Realistic Hairline Corner Fractures & Translucent Glass Shards */}
       <svg
-        className="w-full h-full absolute inset-0 filter drop-shadow-[0_0_6px_rgba(255,255,255,0.7)]"
+        className="w-full h-full absolute inset-0 filter drop-shadow-[0_0_2px_rgba(255,255,255,0.5)]"
         viewBox="0 0 1000 600"
         preserveAspectRatio="none"
       >
         <defs>
-          <linearGradient id="glassShardGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.4)" />
-            <stop offset="30%" stopColor="rgba(186,230,253,0.18)" />
-            <stop offset="70%" stopColor="rgba(255,255,255,0.05)" />
-            <stop offset="100%" stopColor="rgba(147,197,253,0.25)" />
+          <linearGradient id="cornerGlassSheen" x1="100%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+            <stop offset="50%" stopColor="rgba(224,242,254,0.06)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0.12)" />
           </linearGradient>
 
-          <linearGradient id="edgeShardGlow" x1="100%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
-            <stop offset="50%" stopColor="rgba(224,242,254,0.12)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
-          </linearGradient>
-
-          <filter id="crackGlow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <filter id="subtleGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="0.8" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -439,98 +439,54 @@ function ShatteredMirrorOverlay({ isGameOver }) {
           </filter>
         </defs>
 
-        {/* ── Outer Perimeter Mirror Shards (Framing borders around the screen & popup) ── */}
-        {/* Top-Left shards */}
-        <polygon points="0,0 220,0 140,85 0,160" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
-        <polygon points="0,160 140,85 105,195 0,260" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
-        <polygon points="140,85 220,0 310,0 240,95 185,115" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.4" />
-        <polygon points="0,0 90,0 0,90" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+        {/* ── Top-Right Corner Break (Realistic Mirror Fracture) ── */}
+        <g filter="url(#subtleGlow)">
+          {/* Corner glass shards */}
+          <polygon points="945,0 1000,0 1000,55 972,42" fill="url(#cornerGlassSheen)" stroke="rgba(255,255,255,0.75)" strokeWidth="1.2" />
+          <polygon points="1000,55 1000,115 958,82 972,42" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.68)" strokeWidth="1.0" />
+          <polygon points="885,0 945,0 972,42 918,34" fill="rgba(224,242,254,0.06)" stroke="rgba(255,255,255,0.65)" strokeWidth="1.0" />
 
-        {/* Top-Right shards */}
-        <polygon points="780,0 1000,0 1000,150 865,85" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
-        <polygon points="865,85 1000,150 1000,270 890,205" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
-        <polygon points="690,0 780,0 865,85 765,110" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.4" />
-        <polygon points="910,0 1000,0 1000,90" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
+          {/* Impact origin micro-arcs */}
+          <path d="M 960,34 Q 972,46 982,40" fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="1.3" />
+          <path d="M 946,26 Q 966,54 990,48" fill="none" stroke="rgba(255,255,255,0.68)" strokeWidth="1.0" />
 
-        {/* Bottom-Left shards */}
-        <polygon points="0,440 120,490 0,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
-        <polygon points="0,600 120,490 230,535 280,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
-        <polygon points="120,490 190,445 230,535" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
-        <polygon points="0,520 80,600 0,600" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
-
-        {/* Bottom-Right shards */}
-        <polygon points="1000,430 870,495 1000,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.8" />
-        <polygon points="1000,600 870,495 765,540 710,600" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.5" />
-        <polygon points="870,495 810,440 765,540" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
-        <polygon points="920,600 1000,520 1000,600" fill="rgba(255,255,255,0.25)" stroke="#fff" strokeWidth="2" />
-
-        {/* Top border jagged glass spikes */}
-        <polygon points="310,0 420,0 380,45" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
-        <polygon points="420,0 580,0 510,55 460,25" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
-        <polygon points="580,0 690,0 635,42" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
-
-        {/* Bottom border jagged glass spikes */}
-        <polygon points="280,600 450,600 375,555" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
-        <polygon points="450,600 590,600 525,545 480,575" fill="url(#edgeShardGlow)" stroke="#e2e8f0" strokeWidth="1.3" />
-        <polygon points="590,600 710,600 645,555" fill="url(#glassShardGlow)" stroke="#e2e8f0" strokeWidth="1.2" />
-
-        {/* Left & Right border shards */}
-        <polygon points="0,260 95,310 0,370" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.4" />
-        <polygon points="1000,270 905,320 1000,380" fill="url(#glassShardGlow)" stroke="#f8fafc" strokeWidth="1.4" />
-
-        {/* ── Primary Impact Spiderweb Center (around 500, 310) ── */}
-        <g filter="url(#crackGlow)" stroke="#f8fafc" strokeLinecap="round" strokeLinejoin="round">
-          {/* Inner concentric impact rings */}
-          <path d="M 485,300 L 515,295 L 530,318 L 510,332 L 480,325 Z" fill="rgba(255,255,255,0.3)" strokeWidth="2.4" />
-          <path d="M 465,285 L 525,278 L 555,315 L 535,348 L 475,342 L 452,310 Z" fill="none" strokeWidth="2.0" />
-          <path d="M 435,260 L 545,250 L 585,310 L 555,370 L 450,365 L 420,305 Z" fill="none" strokeWidth="1.8" />
-          <path d="M 395,230 L 575,215 L 625,305 L 580,400 L 415,395 L 375,295 Z" fill="none" strokeWidth="1.5" strokeDasharray="14 3" />
-
-          {/* Radial fracture lines shooting outward to edges */}
-          {/* To top-left corner */}
-          <polyline points="485,300 440,250 370,210 290,150 185,115 140,85 0,0" strokeWidth="2.2" />
-          <polyline points="440,250 380,225 320,180 240,95 220,0" strokeWidth="1.8" />
-          <polyline points="370,210 310,250 215,230 105,195 0,160" strokeWidth="1.8" />
-
-          {/* To top-right corner */}
-          <polyline points="515,295 565,245 640,195 730,145 810,105 865,85 1000,0" strokeWidth="2.2" />
-          <polyline points="565,245 615,210 685,160 765,110 780,0" strokeWidth="1.8" />
-          <polyline points="640,195 725,235 815,220 890,205 1000,150" strokeWidth="1.8" />
-
-          {/* To bottom-left corner */}
-          <polyline points="480,325 435,375 360,425 270,470 190,445 120,490 0,600" strokeWidth="2.2" />
-          <polyline points="435,375 390,410 315,480 230,535 280,600" strokeWidth="1.8" />
-          <polyline points="360,425 285,385 195,400 95,310 0,260" strokeWidth="1.8" />
-
-          {/* To bottom-right corner */}
-          <polyline points="510,332 555,380 630,430 720,475 810,440 870,495 1000,600" strokeWidth="2.2" />
-          <polyline points="555,380 605,415 680,485 765,540 710,600" strokeWidth="1.8" />
-          <polyline points="630,430 715,390 805,405 905,320 1000,270" strokeWidth="1.8" />
-
-          {/* Top cardinal cracks */}
-          <polyline points="500,280 495,200 510,130 460,25 420,0" strokeWidth="1.8" />
-          <polyline points="510,130 545,75 510,55 580,0" strokeWidth="1.5" />
-
-          {/* Bottom cardinal cracks */}
-          <polyline points="495,345 505,430 490,500 525,545 450,600" strokeWidth="1.8" />
-          <polyline points="490,500 460,550 375,555" strokeWidth="1.5" />
-
-          {/* Left cardinal cracks */}
-          <polyline points="452,310 370,300 280,320 180,310 95,310 0,310" strokeWidth="2.0" />
+          {/* Hairline radiating crack lines staying strictly in corner */}
+          <polyline points="972,42 928,24 864,10 815,0" fill="none" stroke="rgba(255,255,255,0.82)" strokeWidth="1.2" strokeLinecap="round" />
+          <polyline points="972,42 918,74 874,106 835,130" fill="none" stroke="rgba(255,255,255,0.78)" strokeWidth="1.1" strokeLinecap="round" />
+          <polyline points="972,42 956,102 932,158 922,200" fill="none" stroke="rgba(255,255,255,0.72)" strokeWidth="1.0" strokeLinecap="round" />
           
-          {/* Right cardinal cracks */}
-          <polyline points="555,315 640,310 735,330 830,315 905,320 1000,320" strokeWidth="2.0" />
+          {/* Delicate micro-branches */}
+          <polyline points="918,74 922,118 908,150" fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
+          <polyline points="928,24 908,44 884,48" fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
         </g>
 
-        {/* Small floating fractured glass dots / glints */}
-        {[
-          [480, 275, 4], [528, 290, 3], [540, 328, 5], [475, 335, 4],
-          [440, 270, 3], [560, 260, 4], [430, 350, 4], [570, 360, 5],
-          [350, 210, 6], [650, 205, 5], [340, 430, 6], [660, 420, 5],
-          [210, 140, 7], [790, 135, 7], [200, 460, 7], [800, 470, 7],
-        ].map(([cx, cy, r], i) => (
-          <circle key={i} cx={cx} cy={cy} r={r} fill="#ffffff" opacity={0.65} />
-        ))}
+        {/* ── Bottom-Left Corner Break (Subtle Secondary Impact) ── */}
+        <g filter="url(#subtleGlow)">
+          {/* Corner glass shards */}
+          <polygon points="0,545 52,562 0,600" fill="url(#cornerGlassSheen)" stroke="rgba(255,255,255,0.72)" strokeWidth="1.2" />
+          <polygon points="0,600 52,562 108,580 88,600" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.65)" strokeWidth="1.0" />
+
+          {/* Impact micro-arc */}
+          <path d="M 38,552 Q 52,565 62,556" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="1.1" />
+
+          {/* Hairlines extending only along bottom-left corner */}
+          <polyline points="48,565 86,532 138,512 185,502" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="1.1" strokeLinecap="round" />
+          <polyline points="48,565 66,518 92,464 102,418" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="1.0" strokeLinecap="round" />
+          <polyline points="86,532 110,546 134,554" fill="none" stroke="rgba(255,255,255,0.52)" strokeWidth="0.8" />
+        </g>
+
+        {/* ── Top-Left Corner (Minimal Stress Fracture) ── */}
+        <g filter="url(#subtleGlow)">
+          <polygon points="0,0 42,0 24,24 0,18" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.65)" strokeWidth="1.0" />
+          <polyline points="0,32 42,22 86,8 115,0" fill="none" stroke="rgba(255,255,255,0.68)" strokeWidth="1.0" strokeLinecap="round" />
+          <polyline points="42,22 56,52 70,80" fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="0.8" />
+        </g>
+
+        {/* ── Bottom-Right Corner (Minimal Stress Fracture) ── */}
+        <g filter="url(#subtleGlow)">
+          <polygon points="975,600 1000,568 1000,600" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.65)" strokeWidth="1.0" />
+          <polyline points="960,600 942,568 918,540 885,522" fill="none" stroke="rgba(255,255,255,0.62)" strokeWidth="0.9" strokeLinecap="round" />
+        </g>
       </svg>
     </div>
   );
@@ -561,7 +517,7 @@ export default function BikeRacer({ onClose }) {
     dist: 0, playerX: 2.4, playerLean: 0,
     accel: false, brake: false, steer: 0, steerVel: 0,
     nitroAvailable: 100, nitroActive: false, nitroTime: 0,
-    score: 0, cameraMode: 'chase',
+    score: 0, overtakes: 0, cameraMode: 'chase',
     gear: 0, // 5-gear system: 0=G1 … 4=G5
     invulnTime: 2.5, // 2.5s collision immunity grace period on start
     crashed: false, crashTime: 0,
@@ -577,16 +533,30 @@ export default function BikeRacer({ onClose }) {
   const [phase, setPhase] = useState('playing'); // 'playing' | 'gameover' | 'levelcomplete'
   const [shattered, setShattered] = useState(false);
   const [hud,   setHud]   = useState({
-    speed: 0, dist: 0, nitro: 100, score: 0, gear: 1, rpm: 0,
+    speed: 0, dist: 0, nitro: 100, score: 0, overtakes: 0, gear: 1, rpm: 0,
     level: 1, targetDist: 1000, time: 0
   });
   const [levelTimes, setLevelTimes] = useState({}); // { 1: time, 2: time, ... }
   const [currentLevelTime, setCurrentLevelTime] = useState(0);
   const [cameraMode, setCameraMode] = useState('chase');
   const [isPaused, setIsPaused] = useState(false);
-  const [alert, setAlert] = useState(null);
+  const [adPlaying, setAdPlaying] = useState(false);
+  const [adCountdown, setAdCountdown] = useState(3);
+  const [scorePopups, setScorePopups] = useState([]);
   const [touch, setTouch] = useState({gas:false,brake:false});
   const [loading, setLoading] = useState(true);
+
+  const triggerScorePopupRef = useRef(null);
+
+  useEffect(() => {
+    triggerScorePopupRef.current = (x, y) => {
+      const id = Date.now() + Math.random();
+      setScorePopups(prev => [...prev.slice(-6), { id, x, y }]);
+      setTimeout(() => {
+        setScorePopups(prev => prev.filter(p => p.id !== id));
+      }, 850);
+    };
+  }, []);
 
   // Refs to Three.js objects so restartRace can reset transforms and vehicles without re-mounting
   const sceneRef = useRef(null);
@@ -603,10 +573,6 @@ export default function BikeRacer({ onClose }) {
     });
   }, []);
 
-  const showAlert = useCallback((msg, dur=1100) => {
-    setAlert(msg); setTimeout(()=>setAlert(null), dur);
-  }, []);
-
   const restartRace = useCallback((resetLevel = false) => {
     const s = stateRef.current;
     if(resetLevel) {
@@ -618,7 +584,7 @@ export default function BikeRacer({ onClose }) {
       speed:0, dist:0, playerX:2.4, playerLean:0,
       accel:false, brake:false, steer:0, steerVel:0,
       nitroAvailable:100, nitroActive:false, nitroTime:0,
-      score:0, crashed:false, crashTime:0, isPaused:false,
+      score:0, overtakes:0, crashed:false, crashTime:0, isPaused:false,
       invulnTime: 2.5, // 2.5s collision immunity grace period on restart
       gear:0, // Reset to G1 on replay
       levelTime: 0,
@@ -646,6 +612,8 @@ export default function BikeRacer({ onClose }) {
       riderRef.current.rotation.set(0, 0, 0);
     }
     setShattered(false);
+    setScorePopups([]);
+    setAdPlaying(false);
     // Snap camera to start position so lerp doesn't drag from crash location
     if(cameraRef.current) {
       cameraRef.current.position.set(2.4, 1.9, 4.8);
@@ -653,6 +621,77 @@ export default function BikeRacer({ onClose }) {
     }
     setPhase('playing'); setIsPaused(false);
   }, []);
+
+  // Revive player at current distance without resetting race progress
+  const revivePlayer = useCallback(() => {
+    const s = stateRef.current;
+    
+    // Revive physics state (keep current dist and overtakes count!)
+    Object.assign(s, {
+      speed: 65,      // Launch speed in G2
+      gear: 1,       // G2
+      playerLean: 0,
+      steer: 0,
+      steerVel: 0,
+      crashed: false,
+      crashTime: 0,
+      isPaused: false,
+      invulnTime: 4.0, // 4-second invulnerability shield so player safely stabilizes
+    });
+
+    // Push away any vehicles right in front of player
+    if(resetVehiclesRef.current) {
+      resetVehiclesRef.current();
+    }
+
+    // Upright player bike
+    if(playerGroupRef.current) {
+      playerGroupRef.current.position.set(s.playerX, 0, 0);
+      playerGroupRef.current.rotation.set(0, 0, 0);
+      playerGroupRef.current.scale.set(1, 1, 1);
+    }
+
+    // Re-attach rider to bike
+    if(riderRef.current && playerGroupRef.current) {
+      playerGroupRef.current.add(riderRef.current);
+      riderRef.current.position.set(0, 0.02, 0.08);
+      riderRef.current.rotation.set(0, 0, 0);
+    }
+
+    // Snap camera smoothly behind bike
+    if(cameraRef.current) {
+      cameraRef.current.position.set(s.playerX * 0.88, 1.85, 4.3);
+      cameraRef.current.rotation.set(0, 0, 0);
+    }
+
+    setShattered(false);
+    setScorePopups([]);
+    setAdPlaying(false);
+    setPhase('playing');
+    setIsPaused(false);
+  }, []);
+
+  // Watch Ad to Continue (Future Google Ads integration hook)
+  const continueWithAd = useCallback(() => {
+    // =========================================================================
+    // FUTURE GOOGLE ADS / ADMOB REWARDED VIDEO AD HOOK:
+    // When real Ads are enabled, call your Ad SDK here:
+    // window.admob?.rewarded?.show().then(() => revivePlayer());
+    // =========================================================================
+    setAdPlaying(true);
+    setAdCountdown(3);
+
+    let count = 3;
+    const timer = setInterval(() => {
+      count -= 1;
+      setAdCountdown(count);
+      if(count <= 0) {
+        clearInterval(timer);
+        setAdPlaying(false);
+        revivePlayer();
+      }
+    }, 850);
+  }, [revivePlayer]);
 
   const nextLevel = useCallback(() => {
     const s = stateRef.current;
@@ -716,7 +755,7 @@ export default function BikeRacer({ onClose }) {
     const s = stateRef.current;
     if(s.crashed||s.nitroAvailable<25||s.nitroActive) return;
     s.nitroActive=true; s.nitroTime=3.5; s.nitroAvailable=Math.max(0,s.nitroAvailable-35);
-    audio.playNitro(); showAlert('🚀 NITRO BOOST!');
+    audio.playNitro();
   };
 
   const togglePause = () => {
@@ -1239,7 +1278,7 @@ export default function BikeRacer({ onClose }) {
         s.playerLean += (clampedLean - s.playerLean) * 22 * dt;
 
         s.dist  += (s.speed*1000/3600)*dt;
-        s.score += Math.round(s.speed * .05 * dt);
+        // Score is awarded strictly +10 pts per obstacle passed
         if(!s.levelComplete) {
           s.levelTime += dt;
         }
@@ -1344,18 +1383,49 @@ export default function BikeRacer({ onClose }) {
             triggerCrash(s, v);
           } else {
             // Sideswipe: speed penalty instead of full crash
-            s.speed = Math.max(0, s.speed*0.55);
-            s.score = Math.max(0, s.score-100);
-            showAlert('💥 SIDESWIPE! −100', 900);
+            s.speed = Math.max(0, s.speed * 0.55);
+            s.score = Math.max(0, s.score - 10);
           }
         }
 
-        // Near-miss bonus
-        if(!v.passed && !s.levelComplete && v.mesh.position.z>0 && dx<hitW+1.4 && dz<hitL+1.2 && s.speed>80 && !s.crashed) {
-          v.passed=true;
-          const bonus = v.isOncoming ? 280 : 160;
-          s.score+=bonus; s.nitroAvailable=Math.min(100,s.nitroAvailable+18);
-          showAlert(v.isOncoming?`⚡ ONCOMING! +${bonus}`:`💨 CLOSE PASS! +${bonus}`, 900);
+        // ── Obstacle Pass Detection (+10 Golden Score at Obstacle Location) ────
+        // ONLY triggers when:
+        // 1. Direct Overtake: Player overtakes car ahead in same lane / close adjacent lane (dx <= hitW + 1.6 && s.speed > v.speed)
+        // 2. Close Edge Pass: Player skims right along the edge of the vehicle (dx <= hitW + 1.25)
+        // Otherwise does NOT trigger if player is far away in another lane.
+        if(!v.passed && !s.crashed && !s.levelComplete && v.mesh.position.z > 0.5) {
+          v.passed = true;
+
+          const isDirectOvertake = (!v.isOncoming && dx <= hitW + 1.6 && s.speed > v.speed);
+          const isCloseEdgePass  = (dx <= hitW + 1.25 && s.speed >= 35);
+
+          if(isDirectOvertake || isCloseEdgePass) {
+            s.score += 10;
+            s.overtakes = (s.overtakes || 0) + 1;
+            s.nitroAvailable = Math.min(100, s.nitroAvailable + 4);
+            audio.playCoin();
+
+            // Determine which side of the bike the car was crossed:
+            // v.mesh.position.x < s.playerX -> Car is on the LEFT of bike
+            // v.mesh.position.x > s.playerX -> Car is on the RIGHT of bike
+            const isLeftSide = v.mesh.position.x <= s.playerX;
+
+            const vPos = new THREE.Vector3(v.mesh.position.x, 1.2, v.mesh.position.z);
+            vPos.project(camera);
+
+            let scrX;
+            if(vPos.z < 1.0) {
+              const rawX = (vPos.x * 0.5 + 0.5) * 100;
+              scrX = isLeftSide ? Math.max(14, Math.min(42, rawX)) : Math.max(58, Math.min(86, rawX));
+            } else {
+              scrX = isLeftSide ? 25 : 75;
+            }
+            const scrY = Math.max(30, Math.min(68, (-vPos.y * 0.5 + 0.5) * 100));
+
+            if(triggerScorePopupRef.current) {
+              triggerScorePopupRef.current(scrX, scrY);
+            }
+          }
         }
 
         // Recycle: lock to same direction type (visual rotation stays correct)
@@ -1516,6 +1586,7 @@ export default function BikeRacer({ onClose }) {
         dist: Math.min(s.levelTargetDist, Math.round(s.dist)),
         nitro: Math.round(s.nitroAvailable),
         score: s.score,
+        overtakes: s.overtakes || 0,
         gear,
         rpm,
         level: s.level,
@@ -1633,12 +1704,30 @@ export default function BikeRacer({ onClose }) {
           </div>
         )}
 
-        {/* ── Floating Alert ── */}
-        {alert && (
-          <div className="absolute left-1/2 top-5 -translate-x-1/2 z-40 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 text-black font-black px-5 py-1.5 rounded-full shadow-2xl animate-bounce text-sm border border-amber-300 whitespace-nowrap">
-            {alert}
+        {/* ── Golden +10 Score Popups (Sleek, reduced font size at obstacle pass location) ── */}
+        {scorePopups.map(p => (
+          <div
+            key={p.id}
+            className="absolute pointer-events-none select-none z-35 flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950/60 border border-amber-400/40 backdrop-blur-[2px] shadow-[0_0_8px_rgba(245,158,11,0.35)] animate-[goldPopFloat_0.8s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+            style={{
+              left: `${p.x}%`,
+              top: `${p.y}%`,
+            }}
+          >
+            <span className="text-amber-300 text-[10px] leading-none">✦</span>
+            <span
+              className="text-xs md:text-sm font-mono font-black tracking-tight leading-none"
+              style={{
+                background: 'linear-gradient(180deg, #ffffff 0%, #fde047 30%, #f59e0b 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                filter: 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.9))',
+              }}
+            >
+              +10
+            </span>
           </div>
-        )}
+        ))}
 
         {/* ── HUD (Playing) ── */}
         {/* ── HUD (Playing) ── */}
@@ -1705,7 +1794,7 @@ export default function BikeRacer({ onClose }) {
                   <span className="text-white/30 text-xs">|</span>
                   <span className="text-slate-300 text-[11px] font-mono">G{hud.gear}</span>
                   <span className="text-white/30 text-xs">|</span>
-                  <span className="text-amber-400 text-[11px]">🏆{hud.score}</span>
+                  <span className="text-amber-400 text-[11px] font-mono font-bold" title="Overtakes">🚗 {hud.overtakes}</span>
                 </div>
 
                 {/* RPM bar */}
@@ -1887,8 +1976,9 @@ export default function BikeRacer({ onClose }) {
               {onClose && (
                 <button
                   onClick={onClose}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-3 rounded-xl cursor-pointer text-sm">
-                  Exit
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold px-5 py-3 rounded-xl cursor-pointer text-sm flex items-center justify-center gap-2">
+                  <i className="fa-solid fa-house text-xs"/>
+                  <span>Home</span>
                 </button>
               )}
             </div>
@@ -1900,6 +1990,46 @@ export default function BikeRacer({ onClose }) {
           <ShatteredMirrorOverlay isGameOver={phase === 'gameover'} />
         )}
 
+        {/* ── Rewarded Ad Playing Modal Overlay (Google Ads ready) ── */}
+        {adPlaying && (
+          <div className="absolute inset-0 z-50 bg-black/92 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-[fadeIn_0.2s_ease-out]">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400 flex items-center justify-center text-3xl mb-3 shadow-[0_0_30px_rgba(245,158,11,0.5)] animate-pulse">
+              📺
+            </div>
+            <div className="inline-block bg-amber-400/20 border border-amber-400/60 text-amber-300 text-xs font-mono font-bold px-3 py-1 rounded-full mb-2">
+              REWARDED AD [TEST MODE]
+            </div>
+            <h3 className="text-2xl font-black text-white mb-1" style={{ fontFamily: 'Fredoka, sans-serif' }}>
+              Watching Ad to Continue...
+            </h3>
+            <p className="text-slate-300 text-xs max-w-xs mb-5">
+              Google Ads integration ready. Your bike will revive at current distance with a 4s shield!
+            </p>
+
+            {/* Countdown Progress Bar */}
+            <div className="w-48 h-2 bg-slate-800 rounded-full overflow-hidden border border-white/20 mb-2">
+              <div 
+                className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-700 ease-linear"
+                style={{ width: `${((3 - adCountdown) / 3) * 100}%` }}
+              />
+            </div>
+            <div className="text-amber-300 font-mono text-xs font-bold mb-4">
+              Resuming in {adCountdown}s...
+            </div>
+
+            {/* Quick Skip for testing */}
+            <button
+              onClick={() => {
+                setAdPlaying(false);
+                revivePlayer();
+              }}
+              className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+            >
+              Skip Ad & Revive Now ⏩
+            </button>
+          </div>
+        )}
+
         {/* ── Game Over Screen ── */}
         {phase==='gameover' && (
           <div className="absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-[fadeIn_0.3s_ease-out]">
@@ -1907,17 +2037,39 @@ export default function BikeRacer({ onClose }) {
               <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/55 flex items-center justify-center text-3xl mb-3 animate-bounce">💥</div>
               <h2 className="text-3xl md:text-4xl font-black text-white mb-1" style={{fontFamily:'Fredoka,sans-serif'}}>CRASHED!</h2>
               <p className="text-slate-300 text-xs max-w-xs mb-5">You hit highway traffic at high speed. Keep your line and overtake cleanly.</p>
-              <div className="flex gap-6 bg-slate-900/85 p-4 rounded-2xl border border-slate-700/80 mb-5 backdrop-blur-md shadow-2xl">
-                {[['SPEED',`${hud.speed} KM/H`,'text-rose-400'],['DISTANCE',`${hud.dist}m`,'text-amber-400'],['SCORE',hud.score,'text-emerald-400']].map(([l,v,cls])=>(
-                  <div key={l} className="text-center">
-                    <div className="text-slate-400 text-[11px] font-semibold">{l}</div>
-                    <div className={`text-xl md:text-2xl font-black font-mono ${cls}`}>{v}</div>
+              <div className="flex justify-center gap-8 bg-slate-900/85 px-7 py-4 rounded-2xl border border-slate-700/80 mb-5 backdrop-blur-md shadow-2xl">
+                {[['DISTANCE',`${hud.dist}m`,'text-amber-400'],['OVERTAKES',hud.overtakes,'text-emerald-400']].map(([l,v,cls])=>(
+                  <div key={l} className="text-center min-w-[90px]">
+                    <div className="text-slate-400 text-[11px] font-semibold tracking-wider">{l}</div>
+                    <div className={`text-2xl md:text-3xl font-black font-mono ${cls}`}>{v}</div>
                   </div>
                 ))}
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => restartRace(false)} className="bg-gradient-to-r from-red-500 to-rose-600 hover:brightness-110 text-white font-bold px-7 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer text-sm">🔄 Play Again</button>
-                {onClose&&<button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 py-2.5 rounded-xl cursor-pointer text-sm">Exit</button>}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button 
+                  onClick={continueWithAd}
+                  className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:brightness-110 text-black font-black px-6 py-2.5 rounded-xl shadow-[0_0_20px_rgba(245,158,11,0.5)] active:scale-95 cursor-pointer text-sm flex items-center justify-center gap-2"
+                >
+                  <i className="fa-solid fa-play text-xs"/>
+                  <span>Watch Ad to Continue</span>
+                  <span className="text-[10px] bg-black/35 text-amber-200 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">AD</span>
+                </button>
+                <button 
+                  onClick={() => restartRace(false)}
+                  className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg active:scale-95 cursor-pointer text-sm flex items-center justify-center gap-2"
+                >
+                  <i className="fa-solid fa-rotate-left text-xs"/>
+                  <span>Restart Game</span>
+                </button>
+                {onClose && (
+                  <button 
+                    onClick={onClose}
+                    className="bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-white font-bold px-5 py-2.5 rounded-xl cursor-pointer text-sm flex items-center justify-center gap-2"
+                  >
+                    <i className="fa-solid fa-house text-xs"/>
+                    <span>Home</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

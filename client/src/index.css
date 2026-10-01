@@ -255,3 +255,23 @@ html.light .glass-nav {
   background: #334155;
 }
 
+/* 3D Bike Racer Golden +10 Score Popup */
+@keyframes goldPopFloat {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.65);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 10px)) scale(1.08);
+  }
+  65% {
+    opacity: 0.95;
+    transform: translate(-50%, calc(-50% - 26px)) scale(1.0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 42px)) scale(0.92);
+  }
+}
+
