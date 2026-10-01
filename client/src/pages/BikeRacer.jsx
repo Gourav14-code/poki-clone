@@ -3,42 +3,6 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-
-// ── Radial Velocity Motion Blur Shader ────────────────────────────────────────
-const RadialMotionBlurShader = {
-  uniforms: {
-    tDiffuse:  { value: null },
-    uSpeed:    { value: 0.0 },
-    uCenter:   { value: new THREE.Vector2(0.5, 0.54) },
-    uStrength: { value: 0.06 },
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float uSpeed;
-    uniform vec2 uCenter;
-    uniform float uStrength;
-    varying vec2 vUv;
-    void main(){
-      if(uSpeed<0.04){gl_FragColor=texture2D(tDiffuse,vUv);return;}
-      vec2 dir=vUv-uCenter;
-      float blur=clamp(dot(dir,dir)*uSpeed*uStrength,0.0,0.032);
-      vec4 col=vec4(0.0);
-      for(int i=0;i<8;i++){
-        float t=float(i)/7.0-0.5;
-        col+=texture2D(tDiffuse,clamp(vUv-dir*(t*blur),vec2(0.0),vec2(1.0)));
-      }
-      gl_FragColor=col*0.125;
-    }
-  `,
-};
 
 // ── Superbike Engine Audio ─────────────────────────────────────────────────
 class BikeAudioEngine {
@@ -501,6 +465,90 @@ const GEARS = [
   { shift: 245, redline: 260, torque: 18, engBrake: 18 }, // G5: 172–200 km/h in ~1.6s -> Total 0–200 in ~7.9s!
 ];
 
+// ── Arcade 3D Curved Highway Track Dynamics ──────────────────────────────────
+// Level 1 Track Curvature Profile (1000m Total):
+//   0m–120m:   Launch Straightaway (0.0)
+// 120m–360m:   Sweeping Right Turn (+0.75)
+// 360m–520m:   High-Speed Straight (0.0)
+// 520m–740m:   Thrilling Left Turn (-0.80)
+// 740m–930m:   Arcade S-Curve Combo (Right -> Left flick)
+// 930m–1000m:  Straight sprint to the Checkered Finish Line Gantry!
+function getRoadCurveAt(dist) {
+  const d = dist;
+  if (d < 120) return 0;
+  if (d < 360) {
+    const t = (d - 120) / 240;
+    return Math.sin(t * Math.PI) * 0.75;
+  }
+  if (d < 520) return 0;
+  if (d < 740) {
+    const t = (d - 520) / 220;
+    return -Math.sin(t * Math.PI) * 0.80;
+  }
+  if (d < 930) {
+    const t = (d - 740) / 190;
+    return Math.sin(t * Math.PI * 2) * 0.85;
+  }
+  return 0;
+}
+
+// Parabolic lateral displacement at depth z relative to player
+function getCurveOffset(z, playerDist) {
+  if (z >= 10) return 0;
+  const distAhead = Math.max(0, -z);
+  const sampleDist = playerDist + distAhead * 0.65;
+  const curvature = getRoadCurveAt(sampleDist);
+  return curvature * (distAhead * distAhead * 0.0004);
+}
+
+// Tangent angle along curve (for car, gantry, and camera alignment)
+function getCurveTangent(z, playerDist) {
+  const z1 = z - 2;
+  const z2 = z + 2;
+  const x1 = getCurveOffset(z1, playerDist);
+  const x2 = getCurveOffset(z2, playerDist);
+  return Math.atan2(x1 - x2, 4);
+}
+
+// Procedural dynamic guardrail ribbon along highway edges
+function makeGuardrailGeometry(side, segs, roadW, roadL) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array((segs + 1) * 2 * 3);
+  const uvs = new Float32Array((segs + 1) * 2 * 2);
+  const idx = [];
+
+  const xBase = side * (roadW / 2 + 0.25);
+  for(let j = 0; j <= segs; j++) {
+    const zWorld = (j / segs - 1) * roadL + 10;
+    // Top vertex
+    pos[(j * 2 + 0) * 3 + 0] = xBase;
+    pos[(j * 2 + 0) * 3 + 1] = 0.68;
+    pos[(j * 2 + 0) * 3 + 2] = zWorld;
+    // Bottom vertex
+    pos[(j * 2 + 1) * 3 + 0] = xBase;
+    pos[(j * 2 + 1) * 3 + 1] = 0.24;
+    pos[(j * 2 + 1) * 3 + 2] = zWorld;
+
+    uvs[(j * 2 + 0) * 2 + 0] = (j / segs) * 20;
+    uvs[(j * 2 + 0) * 2 + 1] = 1;
+    uvs[(j * 2 + 1) * 2 + 0] = (j / segs) * 20;
+    uvs[(j * 2 + 1) * 2 + 1] = 0;
+
+    if(j < segs) {
+      const a = j * 2 + 0;
+      const b = j * 2 + 1;
+      const c = (j + 1) * 2 + 0;
+      const d = (j + 1) * 2 + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function BikeRacer({ onClose }) {
 
@@ -533,7 +581,7 @@ export default function BikeRacer({ onClose }) {
   const [phase, setPhase] = useState('playing'); // 'playing' | 'gameover' | 'levelcomplete'
   const [shattered, setShattered] = useState(false);
   const [hud,   setHud]   = useState({
-    speed: 0, dist: 0, nitro: 100, score: 0, overtakes: 0, gear: 1, rpm: 0,
+    speed: 0, dist: 0, nitro: 100, nitroActive: false, score: 0, overtakes: 0, gear: 1, rpm: 0,
     level: 1, targetDist: 1000, time: 0
   });
   const [levelTimes, setLevelTimes] = useState({}); // { 1: time, 2: time, ... }
@@ -547,6 +595,7 @@ export default function BikeRacer({ onClose }) {
   const [loading, setLoading] = useState(true);
 
   const triggerScorePopupRef = useRef(null);
+  const emitFireBurstRef = useRef(null);
 
   useEffect(() => {
     triggerScorePopupRef.current = (x, y) => {
@@ -753,9 +802,16 @@ export default function BikeRacer({ onClose }) {
   const triggerNitro = () => {
     audio.init();
     const s = stateRef.current;
-    if(s.crashed||s.nitroAvailable<25||s.nitroActive) return;
-    s.nitroActive=true; s.nitroTime=3.5; s.nitroAvailable=Math.max(0,s.nitroAvailable-35);
+    if(s.crashed || s.levelComplete || s.nitroAvailable < 100 || s.nitroActive) return;
+    s.nitroActive = true;
+    s.nitroTime = 4.0;
+    s.nitroAvailable = 0;
+    // Explosive instant speed surge
+    s.speed = Math.min(s.maxSpeed || 290, s.speed + 32);
     audio.playNitro();
+    if(emitFireBurstRef.current) {
+      emitFireBurstRef.current();
+    }
   };
 
   const togglePause = () => {
@@ -776,6 +832,7 @@ export default function BikeRacer({ onClose }) {
     // Scene & Renderer
     const scene = new THREE.Scene();
     sceneRef.current = scene;
+    scene.background = new THREE.Color('#5ba4d0');
     scene.fog = new THREE.FogExp2('#e89a5c', 0.0033);
 
     const camera = new THREE.PerspectiveCamera(65, W/H, 0.1, 1000);
@@ -786,18 +843,12 @@ export default function BikeRacer({ onClose }) {
     const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance', stencil:false});
     renderer.setSize(W,H);
     renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    renderer.setClearColor('#5ba4d0', 1);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.22;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(renderer.domElement);
-
-    // Post-Processing
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(W,H), 0.48, 0.35, 0.82));
-    const blurPass = new ShaderPass(RadialMotionBlurShader);
-    composer.addPass(blurPass);
 
     // Lighting
     scene.add(new THREE.AmbientLight('#d6eaff', 0.88));
@@ -818,37 +869,56 @@ export default function BikeRacer({ onClose }) {
       ()=>{ scene.background=new THREE.Color('#5ba4d0'); }
     );
 
-    // ── Road & Shoulder ──────────────────────────────────────────────────────
+    // ── 3D Curved Road, Terrain & Guardrails ──────────────────────────────────
     const ROAD_W = 16.5, ROAD_L = 420;
+    const ROAD_SEGS = 70;
     const {diffuse:rdiff, normal:rnorm, roughness:rrough} = makeAsphaltTextures();
 
+    const roadGeo = new THREE.PlaneGeometry(ROAD_W, ROAD_L, 1, ROAD_SEGS);
     const road = new THREE.Mesh(
-      new THREE.PlaneGeometry(ROAD_W, ROAD_L),
+      roadGeo,
       new THREE.MeshStandardMaterial({map:rdiff, normalMap:rnorm, normalScale:new THREE.Vector2(.8,.8), roughnessMap:rrough, roughness:.82, metalness:.12})
     );
-    road.rotation.x=-Math.PI/2; road.position.set(0,0,-ROAD_L/2+10); road.receiveShadow=true;
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(0, 0, -ROAD_L / 2 + 10);
+    road.receiveShadow = true;
     scene.add(road);
 
     // Terrain/grass shoulders
-    const terrainMat = new THREE.MeshStandardMaterial({color:'#3d4a3e',roughness:.95,metalness:.04});
-    const terrain = new THREE.Mesh(new THREE.PlaneGeometry(300,ROAD_L), terrainMat);
-    terrain.rotation.x=-Math.PI/2; terrain.position.set(0,-.01,-ROAD_L/2+10); terrain.receiveShadow=true;
+    const terrainMat = new THREE.MeshStandardMaterial({color:'#3d4a3e', roughness:.95, metalness:.04});
+    const terrainGeo = new THREE.PlaneGeometry(320, ROAD_L, 1, ROAD_SEGS);
+    const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+    terrain.rotation.x = -Math.PI / 2;
+    terrain.position.set(0, -0.01, -ROAD_L / 2 + 10);
+    terrain.receiveShadow = true;
     scene.add(terrain);
 
-    // Guardrails
-    const railMat = new THREE.MeshStandardMaterial({color:'#c8d0dc',metalness:.92,roughness:.22});
-    const railGeo = new THREE.BoxGeometry(.12,.45,ROAD_L);
-    [-1,1].forEach(side=>{
-      const r = new THREE.Mesh(railGeo, railMat);
-      r.position.set(side*(ROAD_W/2+.25), .48, -ROAD_L/2+10);
-      r.castShadow=r.receiveShadow=true; scene.add(r);
-      // Rail posts
-      for(let z=-ROAD_L/2+10; z<ROAD_L/2; z+=8){
-        const post = new THREE.Mesh(new THREE.BoxGeometry(.08,.65,.08), railMat);
-        post.position.set(side*(ROAD_W/2+.25),.33,z);
-        post.castShadow=true; scene.add(post);
-      }
-    });
+    // Dynamic Guardrail Ribbons along highway edges
+    const railMat = new THREE.MeshStandardMaterial({color:'#cbd5e1', metalness:0.92, roughness:0.22});
+    const railLeftGeo = makeGuardrailGeometry(-1, ROAD_SEGS, ROAD_W, ROAD_L);
+    const railLeft = new THREE.Mesh(railLeftGeo, railMat);
+    railLeft.castShadow = true;
+    railLeft.receiveShadow = true;
+    scene.add(railLeft);
+
+    const railRightGeo = makeGuardrailGeometry(1, ROAD_SEGS, ROAD_W, ROAD_L);
+    const railRight = new THREE.Mesh(railRightGeo, railMat);
+    railRight.castShadow = true;
+    railRight.receiveShadow = true;
+    scene.add(railRight);
+
+    // Guardrail Support Posts along highway edges
+    const railPosts = [];
+    for(let z = -ROAD_L + 10; z < 20; z += 12) {
+      [-1, 1].forEach(side => {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.65, 0.12), railMat);
+        post.position.set(side * (ROAD_W / 2 + 0.25), 0.33, z);
+        post.userData = { side, origZ: z };
+        post.castShadow = true;
+        scene.add(post);
+        railPosts.push(post);
+      });
+    }
 
     // ── Roadside Trees (GLTF with procedural fallback) ───────────────────────
     const trees = [];
@@ -877,6 +947,7 @@ export default function BikeRacer({ onClose }) {
         const sc = .8+Math.random()*.85;
         const tree = template ? template.clone(true) : makeFallbackTree();
         tree.scale.set(sc,sc,sc);
+        tree.userData = { origX: xd };
         tree.position.set(xd, 0, -Math.random()*ROAD_L);
         tree.rotation.y = Math.random()*Math.PI*2;
         scene.add(tree); trees.push(tree);
@@ -1027,8 +1098,8 @@ export default function BikeRacer({ onClose }) {
     });
 
 
-    // ── Tire Smoke Particle System ────────────────────────────────────────────
-    const N_PARTS = 100;
+    // ── Tire Smoke & Smoking Fire Nitro Exhaust Particle System ────────────────
+    const N_PARTS = 240;
     const pPos = new Float32Array(N_PARTS*3);
     const pCol = new Float32Array(N_PARTS*3);
     const pSiz = new Float32Array(N_PARTS);
@@ -1042,26 +1113,89 @@ export default function BikeRacer({ onClose }) {
     const smokeTex = makeRadialTex(64,[
       [0,'rgba(255,255,255,.96)'],[.38,'rgba(230,235,245,.52)'],[.72,'rgba(200,210,228,.16)'],[1,'rgba(180,190,215,0)']
     ]);
-    const pMat = new THREE.PointsMaterial({size:.95,vertexColors:true,transparent:true,opacity:.62,map:smokeTex,depthWrite:false});
+    const pMat = new THREE.PointsMaterial({size:.95,vertexColors:true,transparent:true,opacity:.68,map:smokeTex,depthWrite:false});
     const pSys = new THREE.Points(pGeo, pMat);
     scene.add(pSys);
 
     const pool = Array.from({length:N_PARTS},()=>({active:false,x:0,y:0,z:0,vx:0,vy:0,vz:0,life:0,maxLife:1,sz:0,tSz:1,r:1,g:1,b:1,a:1}));
     let pNext = 0;
 
-    function emitSmoke(isNitro, spd) {
-      const p = pool[pNext]; pNext=(pNext+1)%N_PARTS;
+    function emitSmoke(isNitro, spd, isFire = false) {
+      const p = pool[pNext]; pNext = (pNext + 1) % N_PARTS;
       const s = stateRef.current;
-      p.active=true; p.life=0; p.maxLife=.4+Math.random()*.4;
-      p.x=s.playerX+(Math.random()-.5)*.18; p.y=.1+Math.random()*.07; p.z=1.05;
-      if(isNitro){
-        p.vx=(Math.random()-.5)*.5; p.vy=.18+Math.random()*.38; p.vz=5+spd*.055;
-        p.sz=.35; p.tSz=1.2; p.r=.15; p.g=.88; p.b=1; p.a=.98;
+      p.active = true;
+
+      if(isNitro && isFire) {
+        // ── Blazing Exhaust Flame Jet ─────────────────────────────────────────
+        p.life = 0;
+        p.maxLife = 0.16 + Math.random() * 0.22;
+        // Dual exhaust muffler positions
+        const side = Math.random() > 0.5 ? 0.16 : -0.16;
+        p.x = s.playerX + side + (Math.random() - 0.5) * 0.04;
+        p.y = 0.27 + (Math.random() - 0.5) * 0.05;
+        p.z = 0.94;
+
+        p.vx = (Math.random() - 0.5) * 0.35;
+        p.vy = 0.12 + Math.random() * 0.24;
+        p.vz = 9.8 + spd * 0.075;
+        p.sz = 0.45;
+        p.tSz = 1.15;
+
+        // Vivid fiery palette: electric blue nitro core, blazing orange/red fire, golden white sparks
+        const roll = Math.random();
+        if(roll < 0.38) {
+          // Electric Nitro Blue flame
+          p.r = 0.05; p.g = 0.88; p.b = 1.0;
+        } else if(roll < 0.78) {
+          // Blazing Fire Orange/Red
+          p.r = 1.0; p.g = 0.42; p.b = 0.03;
+        } else {
+          // Hot Golden Yellow spark
+          p.r = 1.0; p.g = 0.88; p.b = 0.15;
+        }
+        p.a = 1.0;
+      } else if(isNitro && !isFire) {
+        // ── Billowing Smoky Fire Trail Plume ──────────────────────────────────
+        p.life = 0;
+        p.maxLife = 0.48 + Math.random() * 0.38;
+        p.x = s.playerX + (Math.random() - 0.5) * 0.24;
+        p.y = 0.32 + Math.random() * 0.14;
+        p.z = 1.12 + Math.random() * 0.16;
+
+        p.vx = (Math.random() - 0.5) * 0.75;
+        p.vy = 0.35 + Math.random() * 0.5;
+        p.vz = 4.2 + spd * 0.04;
+        p.sz = 0.4;
+        p.tSz = 2.2;
+
+        // Smoky charcoal grey with burning warm tint
+        p.r = 0.34; p.g = 0.30; p.b = 0.28;
+        p.a = 0.65;
       } else {
-        p.vx=(Math.random()-.5)*.65; p.vy=.22+Math.random()*.42; p.vz=1.8+spd*.025;
-        p.sz=.32; p.tSz=1.55; p.r=.9; p.g=.92; p.b=.94; p.a=.52;
+        // ── Normal Tire/Road Friction Smoke ──────────────────────────────────
+        p.life = 0;
+        p.maxLife = 0.38 + Math.random() * 0.35;
+        p.x = s.playerX + (Math.random() - 0.5) * 0.18;
+        p.y = 0.1 + Math.random() * 0.07;
+        p.z = 1.05;
+
+        p.vx = (Math.random() - 0.5) * 0.65;
+        p.vy = 0.22 + Math.random() * 0.42;
+        p.vz = 1.8 + spd * 0.025;
+        p.sz = 0.32;
+        p.tSz = 1.55;
+        p.r = 0.88; p.g = 0.90; p.b = 0.92;
+        p.a = 0.48;
       }
     }
+
+    // Expose instant combustion burst for nitro ignition
+    emitFireBurstRef.current = () => {
+      for(let i = 0; i < 20; i++) {
+        emitSmoke(true, stateRef.current.speed, true);
+        if(i % 2 === 0) emitSmoke(true, stateRef.current.speed, false);
+      }
+    };
 
     // ── Traffic System ────────────────────────────────────────────────────────
     // 4 lanes: left 2 = oncoming (travel toward +Z), right 2 = same-direction (travel toward -Z)
@@ -1245,11 +1379,12 @@ export default function BikeRacer({ onClose }) {
         const prevShift = g === 0 ? 0 : GEARS[g - 1].shift * 0.7;
         const rpmRatio = Math.min(1, Math.max(0, (s.speed - prevShift) / (curGear.redline - prevShift)));
         const torqueCurve = 1.0 - 0.22 * (rpmRatio * rpmRatio);
-        const effectiveTorque = (s.nitroActive ? curGear.torque * 1.55 : curGear.torque) * torqueCurve;
-        const topSpd = s.nitroActive ? (GEARS[4].shift + 35) : curGear.shift;
+        const effectiveTorque = (s.nitroActive ? curGear.torque * 2.2 + 80 : curGear.torque) * torqueCurve;
+        const topSpd = s.nitroActive ? 290 : curGear.shift;
 
-        if(s.accel) {
-          s.speed = Math.min(topSpd, s.speed + effectiveTorque * dt);
+        if(s.accel || s.nitroActive) {
+          const nitroThrust = s.nitroActive ? 85 : 0;
+          s.speed = Math.min(topSpd, s.speed + (effectiveTorque + nitroThrust) * dt);
         } else if(s.brake) {
           // Strong responsive brakes: mechanical disc (65 km/h/s) + gear-dependent engine braking
           // G1: 65 + 50 = 115 km/h/s (stops fast at low speed)
@@ -1269,12 +1404,19 @@ export default function BikeRacer({ onClose }) {
         s.steerVel = s.steerVel || 0;
         s.steerVel += (targetSteerVel - s.steerVel) * 32 * dt;
         s.playerX += s.steerVel * dt;
+
+        // Centrifugal drift on curves: high-speed turns push bike outward if player doesn't steer
+        const currentCurvature = getRoadCurveAt(s.dist);
+        if(Math.abs(currentCurvature) > 0.05 && s.speed > 25) {
+          const centrifugal = currentCurvature * (s.speed / 160) * 1.5 * dt;
+          s.playerX -= centrifugal;
+        }
+
         s.playerX = Math.max(-ROAD_W/2 + 1.2, Math.min(ROAD_W/2 - 1.2, s.playerX));
 
-        // Controlled, realistic banking lean (CAPPED at 0.25 rad / ~14 degrees)
-        // Bike NEVER dips or clips into the asphalt surface
-        const leanTarget = -s.steer * 0.25 * Math.min(1, s.speed / 30 + 0.2);
-        const clampedLean = Math.max(-0.25, Math.min(0.25, leanTarget));
+        // Controlled, realistic banking lean: combines player steer + curve banking
+        const leanTarget = -s.steer * 0.25 * Math.min(1, s.speed / 30 + 0.2) + currentCurvature * 0.08;
+        const clampedLean = Math.max(-0.28, Math.min(0.28, leanTarget));
         s.playerLean += (clampedLean - s.playerLean) * 22 * dt;
 
         s.dist  += (s.speed*1000/3600)*dt;
@@ -1285,10 +1427,16 @@ export default function BikeRacer({ onClose }) {
 
         audio.update(s.speed, s.accel, s.brake, s.nitroActive, g, rpmRatio);
 
-        // Emit tire smoke
-        if((s.accel||s.nitroActive||(s.brake&&s.speed>75))&&s.speed>8){
-          emitSmoke(s.nitroActive, s.speed);
-          if(s.nitroActive||s.speed>155) emitSmoke(s.nitroActive, s.speed);
+        // Emit tire smoke & smoking fiery nitro exhaust
+        if(s.nitroActive) {
+          emitSmoke(true, s.speed, true);
+          emitSmoke(true, s.speed, true);
+          emitSmoke(true, s.speed, true);
+          emitSmoke(true, s.speed, false);
+          emitSmoke(true, s.speed, false);
+        } else if((s.accel || (s.brake && s.speed > 75)) && s.speed > 8) {
+          emitSmoke(false, s.speed, false);
+          if(s.speed > 155) emitSmoke(false, s.speed, false);
         }
       }
 
@@ -1296,7 +1444,11 @@ export default function BikeRacer({ onClose }) {
       const remDist = s.levelTargetDist - s.dist;
       if(remDist <= 120 && remDist >= -20) {
         finishLineGroup.visible = true;
-        finishLineGroup.position.z = -remDist;
+        const flZ = -remDist;
+        const flCurve = getCurveOffset(flZ, s.dist);
+        const flAngle = getCurveTangent(flZ, s.dist);
+        finishLineGroup.position.set(flCurve, 0, flZ);
+        finishLineGroup.rotation.y = -flAngle;
       } else {
         finishLineGroup.visible = false;
       }
@@ -1332,10 +1484,50 @@ export default function BikeRacer({ onClose }) {
       rnorm.offset.y  = rdiff.offset.y;
       rrough.offset.y = rdiff.offset.y;
 
-      // ── Tree Looping ─────────────────────────────────────────────────────────
-      trees.forEach(tree=>{
+      // ── 3D Dynamic Curve Highway Deformation ────────────────────────────────
+      const roadPos = roadGeo.attributes.position;
+      const terrPos = terrainGeo.attributes.position;
+      const railLPos = railLeftGeo.attributes.position;
+      const railRPos = railRightGeo.attributes.position;
+
+      for (let j = 0; j <= ROAD_SEGS; j++) {
+        const zWorld = (j / ROAD_SEGS - 1) * ROAD_L + 10;
+        const offX = getCurveOffset(zWorld, s.dist);
+
+        // Road plane vertices
+        roadPos.setX(j * 2 + 0, -ROAD_W / 2 + offX);
+        roadPos.setX(j * 2 + 1, ROAD_W / 2 + offX);
+
+        // Terrain plane vertices
+        terrPos.setX(j * 2 + 0, -160 + offX);
+        terrPos.setX(j * 2 + 1, 160 + offX);
+
+        // Left & right guardrails
+        railLPos.setX(j * 2 + 0, -ROAD_W / 2 - 0.25 + offX);
+        railLPos.setX(j * 2 + 1, -ROAD_W / 2 - 0.25 + offX);
+
+        railRPos.setX(j * 2 + 0, ROAD_W / 2 + 0.25 + offX);
+        railRPos.setX(j * 2 + 1, ROAD_W / 2 + 0.25 + offX);
+      }
+      roadPos.needsUpdate = true;
+      terrPos.needsUpdate = true;
+      railLPos.needsUpdate = true;
+      railRPos.needsUpdate = true;
+
+      // ── Guardrail Posts Looping along Curve ──────────────────────────────────
+      railPosts.forEach(post => {
+        post.position.z += moveDist;
+        if(post.position.z > 20) post.position.z -= ROAD_L;
+        const offX = getCurveOffset(post.position.z, s.dist);
+        post.position.x = post.userData.side * (ROAD_W / 2 + 0.25) + offX;
+      });
+
+      // ── Tree Looping along Curve ─────────────────────────────────────────────
+      trees.forEach(tree => {
         tree.position.z += moveDist;
-        if(tree.position.z>30) tree.position.z -= ROAD_L;
+        if(tree.position.z > 30) tree.position.z -= ROAD_L;
+        const offX = getCurveOffset(tree.position.z, s.dist);
+        tree.position.x = (tree.userData.origX || 0) + offX;
       });
 
       // ── Particle System Update ───────────────────────────────────────────────
@@ -1372,8 +1564,14 @@ export default function BikeRacer({ onClose }) {
         }
         v.mesh.position.z += (relKmh * 1000/3600) * dt;
 
+        // ── Curve Follow: Lock car to its curved lane X and rotate along tangent ──
+        const curveOff = getCurveOffset(v.mesh.position.z, s.dist);
+        const curveAngle = getCurveTangent(v.mesh.position.z, s.dist);
+        v.mesh.position.x = v.x + curveOff;
+        v.mesh.rotation.y = (v.isOncoming ? 0 : Math.PI) - curveAngle;
+
         // ── Bounding Box Collision ─────────────────────────────────────────────
-        const dx = Math.abs(s.playerX - v.mesh.position.x);
+        const dx = Math.abs(s.playerX - v.x);
         const dz = Math.abs(v.mesh.position.z);
         const hitW = (v.width+.9)/2;
         const hitL = (v.len+1.6)/2;
@@ -1402,7 +1600,7 @@ export default function BikeRacer({ onClose }) {
           if(isDirectOvertake || isCloseEdgePass) {
             s.score += 10;
             s.overtakes = (s.overtakes || 0) + 1;
-            s.nitroAvailable = Math.min(100, s.nitroAvailable + 4);
+            s.nitroAvailable = Math.min(100, s.nitroAvailable + 15);
             audio.playCoin();
 
             // Determine which side of the bike the car was crossed:
@@ -1542,6 +1740,7 @@ export default function BikeRacer({ onClose }) {
         }
       } else {
         // ── Normal Camera Tracking (when not crashed) ─────────────────────────
+        const currentCurvature = getRoadCurveAt(s.dist);
         if(s.cameraMode==='chase') {
           // Stable, forward-driving chase cam with smooth lateral follow
           const targetX = s.playerX * 0.88; // Slight trailing lag creates natural 3D lane change feel
@@ -1550,7 +1749,8 @@ export default function BikeRacer({ onClose }) {
           camera.position.x += (targetX - camera.position.x) * 12 * dt;
           camera.position.y += (targetY - camera.position.y) * 10 * dt;
           camera.position.z += (targetZ - camera.position.z) * 10 * dt;
-          camera.rotation.z = -s.playerLean * 0.24; // Subtle banking tilt
+          // Camera banks slightly with curve + bike lean
+          camera.rotation.z = -s.playerLean * 0.24 - currentCurvature * 0.05;
           camera.fov = 64 + ratio * 5; // Controlled, clean speed FOV (no bike shrinking)
           camera.updateProjectionMatrix();
           // High-speed micro-shake
@@ -1558,20 +1758,20 @@ export default function BikeRacer({ onClose }) {
             camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
             camera.position.x += (Math.random() - 0.5) * ratio * 0.012;
           }
-          camera.lookAt(s.playerX * 0.55, 1.1, -26);
+          // Camera peers through the curve ahead
+          const lookAheadCurve = getCurveOffset(-35, s.dist);
+          camera.lookAt(s.playerX * 0.55 + lookAheadCurve * 0.35, 1.1, -26);
         } else {
           // First-person cockpit
           camera.position.set(s.playerX, 1.29, .1);
-          camera.rotation.z = s.playerLean * .88;
+          camera.rotation.z = s.playerLean * .88 - currentCurvature * 0.08;
           camera.fov = 64 + ratio * 8;
           camera.updateProjectionMatrix();
           if(s.speed > 75) camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
-          camera.lookAt(s.playerX, 1.06, -35);
+          const lookAheadCurve = getCurveOffset(-40, s.dist);
+          camera.lookAt(s.playerX + lookAheadCurve * 0.4, 1.06, -35);
         }
       }
-
-      // Motion blur strength proportional to speed
-      blurPass.uniforms.uSpeed.value = ratio * 0.7;
 
       // HUD: gear comes directly from physics state (1-indexed for display: 1 to 5)
       // RPM = position within current gear band (0 = just shifted in, 1 = redline / ready to upshift)
@@ -1585,8 +1785,10 @@ export default function BikeRacer({ onClose }) {
         speed: Math.round(s.speed),
         dist: Math.min(s.levelTargetDist, Math.round(s.dist)),
         nitro: Math.round(s.nitroAvailable),
+        nitroActive: !!s.nitroActive,
         score: s.score,
         overtakes: s.overtakes || 0,
+        curveAhead: getRoadCurveAt(s.dist + 65),
         gear,
         rpm,
         level: s.level,
@@ -1594,15 +1796,9 @@ export default function BikeRacer({ onClose }) {
         time: s.levelTime
       });
 
-
-      try {
-        composer.render();
-      } catch (err) {
-        try { renderer.render(scene, camera); } catch {}
-      }
+      renderer.render(scene, camera);
     } catch (err) {
       console.error('BikeRacer animation error:', err);
-      try { renderer.render(scene, camera); } catch {}
     }
     rafRef.current = requestAnimationFrame(animate);
   };
@@ -1667,7 +1863,7 @@ export default function BikeRacer({ onClose }) {
     const onResize = () => {
       const w=container.clientWidth||800, h=container.clientHeight||500;
       camera.aspect=w/h; camera.updateProjectionMatrix();
-      renderer.setSize(w,h); composer.setSize(w,h);
+      renderer.setSize(w,h);
     };
     const ro = new ResizeObserver(onResize);
     ro.observe(container);
@@ -1783,6 +1979,14 @@ export default function BikeRacer({ onClose }) {
                     style={{ width: `${Math.min(100, (hud.dist / (hud.targetDist || 100)) * 100)}%` }}
                   />
                 </div>
+
+                {/* Upcoming Curve Warning Badge */}
+                {Math.abs(hud.curveAhead || 0) > 0.35 && (
+                  <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/25 border border-amber-400/60 text-amber-300 font-mono text-[10px] font-black tracking-wider animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)] mt-1 select-none">
+                    <span className="text-xs">{(hud.curveAhead || 0) > 0 ? '⮞' : '⮜'}</span>
+                    <span>{(hud.curveAhead || 0) > 0 ? 'RIGHT CURVE AHEAD' : 'LEFT CURVE AHEAD'}</span>
+                  </div>
+                )}
               </div>
 
               {/* Right: Speedometer, Score, Nitro */}
@@ -1803,13 +2007,82 @@ export default function BikeRacer({ onClose }) {
                     style={{width:`${Math.round(hud.rpm*100)}%`, background:`linear-gradient(90deg, #22c55e ${hud.rpm<.6?'':','} ${hud.rpm>=.6?'#f59e0b':''} ${hud.rpm>=.85?', #ef4444':''})`}}/>
                 </div>
 
-                {/* Nitro */}
-                <button onClick={triggerNitro}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-lg cursor-pointer ${hud.nitro>=25?'bg-rose-600/88 text-white border border-rose-300 animate-pulse active:scale-95':'bg-black/45 border border-white/10 text-white/35'}`}>
-                  <i className="fa-solid fa-bolt text-amber-300 text-[11px]"/>
-                  <span>{hud.nitro}% NITRO</span>
+                {/* Nitro HUD Status */}
+                <button
+                  onClick={triggerNitro}
+                  disabled={hud.nitro < 100 || hud.nitroActive}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-lg transition-all ${
+                    hud.nitroActive
+                      ? 'bg-cyan-500 text-white border border-white shadow-[0_0_15px_#06b6d4]'
+                      : hud.nitro >= 100
+                      ? 'bg-cyan-600/90 text-white border border-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.8)] animate-pulse active:scale-95 cursor-pointer'
+                      : 'bg-black/45 border border-white/10 text-white/35 cursor-not-allowed'
+                  }`}>
+                  <i className="fa-solid fa-bolt text-cyan-300 text-[11px]"/>
+                  <span>{hud.nitroActive ? 'BURNING' : `${hud.nitro}% NITRO`}</span>
                 </button>
               </div>
+            </div>
+
+            {/* ── On-Screen Transparent Nitro Boost Button (Slightly to the side of screen center) ── */}
+            <div className="absolute bottom-14 sm:bottom-16 md:bottom-20 left-1/2 translate-x-10 sm:translate-x-16 md:translate-x-20 pointer-events-auto z-30 select-none">
+              <button
+                type="button"
+                onClick={triggerNitro}
+                disabled={hud.nitro < 100 || hud.nitroActive}
+                title={hud.nitro >= 100 ? "Nitro Ready! Click or press Space" : `Recharging Boost: ${hud.nitro}%`}
+                className={`relative flex flex-col items-center justify-center rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 transition-all duration-300 backdrop-blur-md select-none touch-none ${
+                  hud.nitroActive
+                    ? 'bg-cyan-500/80 border-2 border-white text-white shadow-[0_0_35px_rgba(6,182,212,1)] scale-105'
+                    : hud.nitro >= 100
+                    ? 'bg-gradient-to-tr from-cyan-500/80 via-blue-600/80 to-indigo-600/85 border-2 border-cyan-300 text-white shadow-[0_0_25px_rgba(6,182,212,0.9)] animate-pulse hover:scale-105 active:scale-95 cursor-pointer'
+                    : 'bg-black/35 border border-white/15 text-white/35 cursor-not-allowed opacity-60'
+                }`}
+              >
+                <div className="relative w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center">
+                  {hud.nitro >= 100 || hud.nitroActive ? (
+                    <>
+                      <div className="absolute inset-0 rounded-full bg-cyan-400/30 animate-ping pointer-events-none" />
+                      <i className={`fa-solid fa-fire-flame-curved text-2xl sm:text-3xl text-cyan-200 drop-shadow-[0_0_12px_#06b6d4] ${hud.nitroActive ? 'animate-bounce' : ''}`} />
+                    </>
+                  ) : (
+                    <>
+                      {/* Circular Progress Meter */}
+                      <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                        <path
+                          className="text-white/10"
+                          strokeWidth="3.2"
+                          stroke="currentColor"
+                          fill="none"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path
+                          className="text-cyan-400/70 transition-all duration-200"
+                          strokeDasharray={`${hud.nitro}, 100`}
+                          strokeWidth="3.2"
+                          strokeLinecap="round"
+                          stroke="currentColor"
+                          fill="none"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <div className="absolute flex flex-col items-center justify-center">
+                        <i className="fa-solid fa-bolt text-[11px] text-white/40 mb-0.5" />
+                        <span className="text-[9px] font-mono font-bold text-white/60">{hud.nitro}%</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <span className={`text-[9px] sm:text-[10px] font-black tracking-widest uppercase mt-0.5 font-mono ${
+                  hud.nitroActive
+                    ? 'text-yellow-200 drop-shadow'
+                    : hud.nitro >= 100
+                    ? 'text-cyan-200 drop-shadow-[0_0_6px_#06b6d4]'
+                    : 'text-white/40'
+                }`}>
+                  {hud.nitroActive ? 'BOOSTING!' : hud.nitro >= 100 ? 'NITRO BOOST' : 'NITRO'}
+                </span>
+              </button>
             </div>
 
             {/* Bottom Touch Controls */}
