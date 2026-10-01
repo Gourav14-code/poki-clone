@@ -539,7 +539,12 @@ function makeGuardrailGeometry(side, segs, roadW, roadL) {
       const b = j * 2 + 1;
       const c = (j + 1) * 2 + 0;
       const d = (j + 1) * 2 + 1;
-      idx.push(a, b, c, b, d, c);
+      // When side < 0 (left guardrail), reverse winding so the front face points inward (+X) toward the road
+      if (side < 0) {
+        idx.push(a, c, b, b, c, d);
+      } else {
+        idx.push(a, b, c, b, d, c);
+      }
     }
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -576,16 +581,18 @@ export default function BikeRacer({ onClose }) {
     levelTargetDist: 1000,    // distance required for current level (1.0km)
     levelTime: 0,             // elapsed race time for current level
     levelComplete: false,     // level completion trigger lock
+    maxSpeedReached: 0,       // peak highest speed reached during level
   });
 
   const [phase, setPhase] = useState('playing'); // 'playing' | 'gameover' | 'levelcomplete'
   const [shattered, setShattered] = useState(false);
   const [hud,   setHud]   = useState({
-    speed: 0, dist: 0, nitro: 100, nitroActive: false, score: 0, overtakes: 0, gear: 1, rpm: 0,
+    speed: 0, topSpeed: 0, dist: 0, nitro: 100, nitroActive: false, score: 0, overtakes: 0, gear: 1, rpm: 0,
     level: 1, targetDist: 1000, time: 0
   });
   const [levelTimes, setLevelTimes] = useState({}); // { 1: time, 2: time, ... }
   const [currentLevelTime, setCurrentLevelTime] = useState(0);
+  const [levelTopSpeed, setLevelTopSpeed] = useState(0);
   const [cameraMode, setCameraMode] = useState('chase');
   const [isPaused, setIsPaused] = useState(false);
   const [adPlaying, setAdPlaying] = useState(false);
@@ -611,6 +618,8 @@ export default function BikeRacer({ onClose }) {
   const sceneRef = useRef(null);
   const playerGroupRef = useRef(null);
   const riderRef = useRef(null);
+  const frontWheelPivotRef = useRef(null);
+  const rearWheelPivotRef = useRef(null);
   const cameraRef = useRef(null);
   const resetVehiclesRef = useRef(null);
 
@@ -638,6 +647,7 @@ export default function BikeRacer({ onClose }) {
       gear:0, // Reset to G1 on replay
       levelTime: 0,
       levelComplete: false,
+      maxSpeedReached: 0,
       crashPos:{x:2.4,y:0,z:0},
       crashVel:{x:0,y:0,z:0},
       crashRotVel:{x:0,y:0,z:0},
@@ -654,6 +664,8 @@ export default function BikeRacer({ onClose }) {
       playerGroupRef.current.rotation.set(0, 0, 0);
       playerGroupRef.current.scale.set(1, 1, 1);
     }
+    if(frontWheelPivotRef.current) frontWheelPivotRef.current.rotation.set(0, 0, 0);
+    if(rearWheelPivotRef.current) rearWheelPivotRef.current.rotation.set(0, 0, 0);
     // Re-attach rider to playerGroup if detached during crash
     if(riderRef.current && playerGroupRef.current) {
       playerGroupRef.current.add(riderRef.current);
@@ -663,6 +675,7 @@ export default function BikeRacer({ onClose }) {
     setShattered(false);
     setScorePopups([]);
     setAdPlaying(false);
+    setLevelTopSpeed(0);
     // Snap camera to start position so lerp doesn't drag from crash location
     if(cameraRef.current) {
       cameraRef.current.position.set(2.4, 1.9, 4.8);
@@ -835,7 +848,7 @@ export default function BikeRacer({ onClose }) {
     scene.background = new THREE.Color('#5ba4d0');
     scene.fog = new THREE.FogExp2('#e89a5c', 0.0033);
 
-    const camera = new THREE.PerspectiveCamera(65, W/H, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(65, W/H, 0.05, 1000);
     camera.position.set(2.4, 1.9, 4.8);
     camera.lookAt(2.4, 1.1, -24);
     cameraRef.current = camera; // expose to restartRace for snap-reset on replay
@@ -893,8 +906,13 @@ export default function BikeRacer({ onClose }) {
     terrain.receiveShadow = true;
     scene.add(terrain);
 
-    // Dynamic Guardrail Ribbons along highway edges
-    const railMat = new THREE.MeshStandardMaterial({color:'#cbd5e1', metalness:0.92, roughness:0.22});
+    // Dynamic Guardrail Ribbons along highway edges (Left & Right Highway Steel Barricades)
+    const railMat = new THREE.MeshStandardMaterial({
+      color: '#cbd5e1',
+      metalness: 0.94,
+      roughness: 0.22,
+      side: THREE.DoubleSide
+    });
     const railLeftGeo = makeGuardrailGeometry(-1, ROAD_SEGS, ROAD_W, ROAD_L);
     const railLeft = new THREE.Mesh(railLeftGeo, railMat);
     railLeft.castShadow = true;
@@ -907,14 +925,22 @@ export default function BikeRacer({ onClose }) {
     railRight.receiveShadow = true;
     scene.add(railRight);
 
-    // Guardrail Support Posts along highway edges
+    // Guardrail Support Posts along highway edges with highway reflectors
     const railPosts = [];
+    const reflMatLeft = new THREE.MeshBasicMaterial({ color: '#f59e0b' }); // Amber warning reflector on oncoming left
+    const reflMatRight = new THREE.MeshBasicMaterial({ color: '#ef4444' }); // Red reflector on right
     for(let z = -ROAD_L + 10; z < 20; z += 12) {
       [-1, 1].forEach(side => {
         const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.65, 0.12), railMat);
         post.position.set(side * (ROAD_W / 2 + 0.25), 0.33, z);
         post.userData = { side, origZ: z };
         post.castShadow = true;
+
+        // Highway reflector stud facing traffic
+        const refl = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.10, 0.04), side < 0 ? reflMatLeft : reflMatRight);
+        refl.position.set(0, 0.16, 0);
+        post.add(refl);
+
         scene.add(post);
         railPosts.push(post);
       });
@@ -1042,13 +1068,13 @@ export default function BikeRacer({ onClose }) {
     riderRef.current = rider;
     playerGroup.add(rider);
 
-    // Track wheel meshes and the GLTF bike scene
-    const wheelMeshes = [];
-    let bikeScene = null;
+    // Wheel pivots & dynamic rolling angle
+    let frontWheelPivot = null;
+    let rearWheelPivot = null;
+    let wheelRollAngle = 0;
 
     gltfLoader.load('/models/motorcycle.glb', gltf=>{
       const bikeModel = gltf.scene;
-      bikeScene = bikeModel;
 
       // Auto-scale to ~2.15m length and accurately center
       const bb = new THREE.Box3().setFromObject(bikeModel);
@@ -1063,15 +1089,71 @@ export default function BikeRacer({ onClose }) {
       bikeWrapper.rotation.y = -Math.PI / 2;
       bikeWrapper.add(bikeModel);
 
+      // Collect front and rear rotating wheel components
+      const frontParts = [];
+      const rearParts = [];
+
+      // High-detail realistic materials for moving wheel parts
+      const tireMat = new THREE.MeshStandardMaterial({
+        color: '#15171a',     // Vulcanized rubber black
+        roughness: 0.88,
+        metalness: 0.08,
+      });
+      const rimMat = new THREE.MeshStandardMaterial({
+        color: '#d4af37',     // Metallic gold alloy rims (high contrast against black tire)
+        roughness: 0.22,
+        metalness: 0.92,
+        envMapIntensity: 2.5,
+      });
+      const rimDecalMat = new THREE.MeshStandardMaterial({
+        color: '#ef4444',     // Racing red rim lip decals for high-speed dynamic strobing
+        roughness: 0.28,
+        metalness: 0.65,
+        emissive: '#dc2626',
+        emissiveIntensity: 0.35,
+      });
+      const brakeDiscMat = new THREE.MeshStandardMaterial({
+        color: '#cbd5e1',     // Drilled steel brake rotor disc
+        roughness: 0.25,
+        metalness: 0.95,
+        envMapIntensity: 2.0,
+      });
+      const brakeCaliperMat = new THREE.MeshStandardMaterial({
+        color: '#b91c1c',     // Brembo racing red static caliper
+        roughness: 0.35,
+        metalness: 0.5,
+      });
+
       bikeModel.traverse(child=>{
         if(!child.isMesh) return;
         child.castShadow = true;
         child.receiveShadow = true;
-        // Identify wheels for rolling animation
-        if(/tire|rim|wheel|disc_ABS|sprocket/i.test(child.name)) wheelMeshes.push(child);
-        if(!child.material) return;
-        child.material.envMapIntensity = 1.8;
-        if(/carpaint|body|fairing/i.test(child.material.name) || /body|fender/i.test(child.name)){
+
+        const name = child.name || '';
+        const matName = child.material?.name || '';
+        const isCaliper = /caliper|calipper|cylinder_brake/i.test(name) || /caliper|calipper/i.test(matName);
+
+        // Group wheel meshes for spinning (strictly excluding static brake calipers)
+        if(!isCaliper) {
+          if(/front/i.test(name) && /tire|rim|disk|wheel|brake_disk|decal_rim|bolt_brake/i.test(name)) {
+            frontParts.push(child);
+          } else if(/rear/i.test(name) && /tire|rim|disk|wheel|brake_disk|decal_rim|bolt_rear/i.test(name)) {
+            rearParts.push(child);
+          }
+        }
+
+        // Apply realistic materials
+        if(/tire/i.test(name) || /tire/i.test(matName)) {
+          child.material = tireMat;
+        } else if(/decal_rim/i.test(name)) {
+          child.material = rimDecalMat;
+        } else if(/rim/i.test(name) || /rim/i.test(matName)) {
+          child.material = rimMat;
+        } else if(/brake_disk|brakedisk|disk_ABS/i.test(name) || /brakedisk/i.test(matName)) {
+          child.material = brakeDiscMat;
+        } else if(isCaliper) {
+          child.material = brakeCaliperMat;
+        } else if(/carpaint|body|fairing/i.test(matName) || /body|fender/i.test(name)){
           child.material = new THREE.MeshPhysicalMaterial({
             color: '#b91c1c', // Deep racing red
             clearcoat: 1.0,
@@ -1080,17 +1162,69 @@ export default function BikeRacer({ onClose }) {
             roughness: 0.15,
             envMapIntensity: 2.2,
           });
-        } else if(/chrome|bolt|lever|pipe|exhaust/i.test(child.material.name)){
-          child.material.metalness = 0.98;
-          child.material.roughness = 0.05;
-        } else if(/glass|windshield|mirror/i.test(child.material.name)){
-          child.material.transparent = true;
-          child.material.opacity = 0.45;
-          child.material.roughness = 0.03;
+        } else if(/chrome|bolt|lever|pipe|exhaust/i.test(matName)){
+          child.material = new THREE.MeshStandardMaterial({
+            color: '#e2e8f0',
+            metalness: 0.98,
+            roughness: 0.06,
+            envMapIntensity: 2.0,
+          });
+        } else if(/glass|windshield|mirror/i.test(matName)){
+          child.material = new THREE.MeshStandardMaterial({
+            color: '#a5f3fc',
+            transparent: true,
+            opacity: 0.45,
+            roughness: 0.03,
+          });
+        } else if(child.material) {
+          child.material.envMapIntensity = 1.8;
         }
       });
 
       playerGroup.add(bikeWrapper);
+      playerGroup.updateMatrixWorld(true);
+
+      // Create axle pivots for Front and Rear wheels inside playerGroup space
+      if(frontParts.length > 0) {
+        const frontBox = new THREE.Box3();
+        frontParts.forEach(m => frontBox.expandByObject(m));
+        const frontCenterWorld = new THREE.Vector3();
+        frontBox.getCenter(frontCenterWorld);
+        const frontCenterLocal = frontCenterWorld.clone();
+        playerGroup.worldToLocal(frontCenterLocal);
+
+        frontWheelPivot = new THREE.Group();
+        frontWheelPivot.name = 'frontWheelPivot';
+        frontWheelPivot.position.copy(frontCenterLocal);
+        playerGroup.add(frontWheelPivot);
+        frontWheelPivotRef.current = frontWheelPivot;
+        playerGroup.updateMatrixWorld(true);
+
+        frontParts.forEach(m => {
+          frontWheelPivot.attach(m);
+        });
+      }
+
+      if(rearParts.length > 0) {
+        const rearBox = new THREE.Box3();
+        rearParts.forEach(m => rearBox.expandByObject(m));
+        const rearCenterWorld = new THREE.Vector3();
+        rearBox.getCenter(rearCenterWorld);
+        const rearCenterLocal = rearCenterWorld.clone();
+        playerGroup.worldToLocal(rearCenterLocal);
+
+        rearWheelPivot = new THREE.Group();
+        rearWheelPivot.name = 'rearWheelPivot';
+        rearWheelPivot.position.copy(rearCenterLocal);
+        playerGroup.add(rearWheelPivot);
+        rearWheelPivotRef.current = rearWheelPivot;
+        playerGroup.updateMatrixWorld(true);
+
+        rearParts.forEach(m => {
+          rearWheelPivot.attach(m);
+        });
+      }
+
       // Position rider naturally on the superbike seat
       rider.position.set(0, 0.02, 0.08);
     }, undefined, (err)=>{
@@ -1419,6 +1553,11 @@ export default function BikeRacer({ onClose }) {
         const clampedLean = Math.max(-0.28, Math.min(0.28, leanTarget));
         s.playerLean += (clampedLean - s.playerLean) * 22 * dt;
 
+        // Track highest peak speed achieved in this level
+        if (s.speed > (s.maxSpeedReached || 0)) {
+          s.maxSpeedReached = Math.round(s.speed);
+        }
+
         s.dist  += (s.speed*1000/3600)*dt;
         // Score is awarded strictly +10 pts per obstacle passed
         if(!s.levelComplete) {
@@ -1459,6 +1598,9 @@ export default function BikeRacer({ onClose }) {
         s.accel = false;
         s.steer = 0;
         s.steerVel = 0;
+        const peakSpeed = Math.round(Math.max(s.maxSpeedReached || 0, s.speed));
+        s.maxSpeedReached = peakSpeed;
+        setLevelTopSpeed(peakSpeed);
         s.speed = Math.max(0, s.speed * 0.4); // controlled deceleration upon crossing finish line
         const finalTime = Math.max(0.1, s.levelTime);
         setCurrentLevelTime(finalTime);
@@ -1483,6 +1625,21 @@ export default function BikeRacer({ onClose }) {
       rdiff.offset.y += texDelta; // += moves road texture under wheels from horizon forward!
       rnorm.offset.y  = rdiff.offset.y;
       rrough.offset.y = rdiff.offset.y;
+
+      // ── Dynamic Wheel & Tire Spinning (Synchronized with Ground Speed) ────────
+      // Outer tire radius is ~0.315m. Angular delta in radians = moveDist / radius.
+      // Negative rotation around local X rolls the wheels forward down the road.
+      if(s.speed > 0.1 || !s.crashed) {
+        wheelRollAngle += (moveDist / 0.315);
+      } else if(s.crashed && Math.abs(s.crashVel?.z || 0) > 0.1) {
+        wheelRollAngle += (Math.abs(s.crashVel.z) * dt / 0.315);
+      }
+      if(frontWheelPivot) {
+        frontWheelPivot.rotation.x = -wheelRollAngle;
+      }
+      if(rearWheelPivot) {
+        rearWheelPivot.rotation.x = -wheelRollAngle;
+      }
 
       // ── 3D Dynamic Curve Highway Deformation ────────────────────────────────
       const roadPos = roadGeo.attributes.position;
@@ -1740,8 +1897,14 @@ export default function BikeRacer({ onClose }) {
         }
       } else {
         // ── Normal Camera Tracking (when not crashed) ─────────────────────────
+        if(riderRef.current) {
+          // Hide rider model only during cockpit view to avoid near-frustum clipping & flickering; show in chase view
+          riderRef.current.visible = (s.cameraMode !== 'cockpit');
+        }
+
         const currentCurvature = getRoadCurveAt(s.dist);
         if(s.cameraMode==='chase') {
+          camera.up.set(0, 1, 0);
           // Stable, forward-driving chase cam with smooth lateral follow
           const targetX = s.playerX * 0.88; // Slight trailing lag creates natural 3D lane change feel
           const targetY = 1.82 + ratio * 0.1;
@@ -1762,14 +1925,34 @@ export default function BikeRacer({ onClose }) {
           const lookAheadCurve = getCurveOffset(-35, s.dist);
           camera.lookAt(s.playerX * 0.55 + lookAheadCurve * 0.35, 1.1, -26);
         } else {
-          // First-person cockpit
-          camera.position.set(s.playerX, 1.29, .1);
-          camera.rotation.z = s.playerLean * .88 - currentCurvature * 0.08;
-          camera.fov = 64 + ratio * 8;
+          // First-person cockpit: locked to rider eye position on the bike with 100% precision
+          // localEye at (0, 1.15, -0.22) in playerGroup coordinates
+          const localEye = new THREE.Vector3(0, 1.15, -0.22);
+          const worldEye = localEye.applyMatrix4(playerGroup.matrixWorld);
+
+          // Subtle harmonic engine rev vibration (zero random polygon jitter)
+          if(s.speed > 55) {
+            worldEye.y += Math.sin(performance.now() * 0.045) * ratio * 0.003;
+          }
+
+          camera.position.copy(worldEye);
+
+          // Camera up-vector tilts precisely with the bike's roll / lean
+          const localUp = new THREE.Vector3(0, 1, 0);
+          localUp.applyQuaternion(playerGroup.quaternion);
+          camera.up.copy(localUp);
+
+          camera.fov = 66 + ratio * 6;
           camera.updateProjectionMatrix();
-          if(s.speed > 75) camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
-          const lookAheadCurve = getCurveOffset(-40, s.dist);
-          camera.lookAt(s.playerX + lookAheadCurve * 0.4, 1.06, -35);
+
+          // Camera looks down the highway along the curved road ahead
+          const lookAheadCurve = getCurveOffset(-36, s.dist);
+          const lookTarget = new THREE.Vector3(
+            s.playerX + lookAheadCurve * 0.45,
+            worldEye.y - 0.08,
+            worldEye.z - 36
+          );
+          camera.lookAt(lookTarget);
         }
       }
 
@@ -1783,6 +1966,7 @@ export default function BikeRacer({ onClose }) {
 
       setHud({
         speed: Math.round(s.speed),
+        topSpeed: Math.round(s.maxSpeedReached || s.speed),
         dist: Math.min(s.levelTargetDist, Math.round(s.dist)),
         nitro: Math.round(s.nitroAvailable),
         nitroActive: !!s.nitroActive,
@@ -1793,7 +1977,7 @@ export default function BikeRacer({ onClose }) {
         rpm,
         level: s.level,
         targetDist: s.levelTargetDist,
-        time: s.levelTime
+        time: s.levelTime,
       });
 
       renderer.render(scene, camera);
@@ -1827,6 +2011,7 @@ export default function BikeRacer({ onClose }) {
 
       // Rider ejection physics: detaches from bike and thrown onto pavement
       if(riderRef.current && sceneRef.current) {
+        riderRef.current.visible = true; // Ensure rider is ALWAYS visible on crash!
         const wPos = new THREE.Vector3();
         const wQuat = new THREE.Quaternion();
         riderRef.current.getWorldPosition(wPos);
@@ -1846,6 +2031,15 @@ export default function BikeRacer({ onClose }) {
           y: (Math.random() - 0.5) * 6,
           z: (Math.random() - 0.5) * 6
         };
+      }
+
+      // If crash occurred in cockpit view, immediately snap camera back so player sees the crash in full dramatic view
+      if(cameraRef.current) {
+        cameraRef.current.up.set(0, 1, 0);
+        if(s.cameraMode === 'cockpit') {
+          cameraRef.current.position.set(s.playerX, 2.3, 4.2);
+          cameraRef.current.lookAt(s.playerX, 0.6, 0);
+        }
       }
 
       audio.playCrash();
@@ -1980,6 +2174,12 @@ export default function BikeRacer({ onClose }) {
                   />
                 </div>
 
+                {/* Speed in soft subtle shade directly underneath level line */}
+                <div className="mt-1 flex items-baseline gap-1 font-mono select-none px-3 py-0.5 rounded-full bg-black/35 border border-white/10 backdrop-blur-xs shadow-sm">
+                  <span className="text-xs sm:text-sm font-extrabold text-white/70 tracking-tight">{hud.speed}</span>
+                  <span className="text-[9px] sm:text-[10px] font-semibold text-white/40">KM/H</span>
+                </div>
+
                 {/* Upcoming Curve Warning Badge */}
                 {Math.abs(hud.curveAhead || 0) > 0.35 && (
                   <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/25 border border-amber-400/60 text-amber-300 font-mono text-[10px] font-black tracking-wider animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.5)] mt-1 select-none">
@@ -2025,7 +2225,11 @@ export default function BikeRacer({ onClose }) {
             </div>
 
             {/* ── On-Screen Transparent Nitro Boost Button (Slightly to the side of screen center) ── */}
-            <div className="absolute bottom-14 sm:bottom-16 md:bottom-20 left-1/2 translate-x-10 sm:translate-x-16 md:translate-x-20 pointer-events-auto z-30 select-none">
+            <div className={`absolute pointer-events-auto z-30 select-none ${
+              cameraMode === 'cockpit'
+                ? 'bottom-28 right-24 sm:right-28 md:right-36'
+                : 'bottom-14 sm:bottom-16 md:bottom-20 left-1/2 translate-x-10 sm:translate-x-16 md:translate-x-20'
+            }`}>
               <button
                 type="button"
                 onClick={triggerNitro}
@@ -2104,6 +2308,8 @@ export default function BikeRacer({ onClose }) {
                 </button>
               </div>
 
+
+
               {/* Steer Right + Gas (right cluster) */}
               <div className="flex items-end gap-2">
                 <button
@@ -2121,6 +2327,8 @@ export default function BikeRacer({ onClose }) {
                 </button>
               </div>
             </div>
+
+
           </div>
         )}
 
@@ -2169,7 +2377,9 @@ export default function BikeRacer({ onClose }) {
               <div className="w-[1px] bg-slate-700 my-1"/>
               <div className="text-center">
                 <div className="text-slate-400 text-[11px] font-semibold tracking-wider">TOP SPEED</div>
-                <div className="text-xl md:text-2xl font-black font-mono text-rose-400">{hud.speed} KM/H</div>
+                <div className="text-xl md:text-2xl font-black font-mono text-rose-400">
+                  {levelTopSpeed || hud.topSpeed || Math.round(stateRef.current.maxSpeedReached || hud.speed)} KM/H
+                </div>
               </div>
             </div>
 
