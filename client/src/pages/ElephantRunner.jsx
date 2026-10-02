@@ -1241,7 +1241,7 @@ export default function ElephantRunner() {
       <div className="relative rounded-3xl overflow-hidden border-2 border-slate-800 bg-slate-950 shadow-2xl shadow-cyan-500/10 flex flex-col items-center">
         
         {/* HUD Top Bar Overlay */}
-        <div className="absolute top-0 left-0 right-0 z-20 px-4 py-3 bg-gradient-to-b from-slate-950/90 via-slate-950/40 to-transparent flex items-center justify-between text-xs font-mono font-bold">
+        <div className="absolute top-0 left-0 right-0 z-20 px-4 py-3 bg-gradient-to-b from-slate-950/90 via-slate-950/40 to-transparent flex flex-wrap gap-y-1 items-center justify-between text-xs font-mono font-bold">
           
           {/* Stats: Score, Distance, Peanuts */}
           <div className="flex items-center gap-2 sm:gap-3">
@@ -1359,13 +1359,13 @@ export default function ElephantRunner() {
         )}
 
         {/* On-Screen Mobile & Touch Arcade Controls */}
-        <div className="w-full px-4 py-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between sm:justify-around gap-2">
+        <div className="w-full px-4 py-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between sm:justify-around gap-2" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', touchAction: 'none' }}>
           
           {/* Lane Left / Right Buttons */}
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={triggerMoveLeft}
+              onPointerDown={triggerMoveLeft}
               className="w-14 h-12 rounded-xl bg-slate-800/90 border border-slate-700 active:bg-cyan-500/30 active:border-cyan-400 flex items-center justify-center text-cyan-300 font-bold text-lg transition shadow-md cursor-pointer"
               title="Move Left"
             >
@@ -1373,7 +1373,7 @@ export default function ElephantRunner() {
             </button>
             <button
               type="button"
-              onClick={triggerMoveRight}
+              onPointerDown={triggerMoveRight}
               className="w-14 h-12 rounded-xl bg-slate-800/90 border border-slate-700 active:bg-cyan-500/30 active:border-cyan-400 flex items-center justify-center text-cyan-300 font-bold text-lg transition shadow-md cursor-pointer"
               title="Move Right"
             >
@@ -1391,7 +1391,7 @@ export default function ElephantRunner() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={triggerJump}
+              onPointerDown={triggerJump}
               className="px-4 h-12 rounded-xl bg-amber-500/20 border border-amber-500/50 active:bg-amber-500/40 text-amber-300 font-black text-xs flex items-center gap-1.5 transition shadow-md cursor-pointer"
               title="Jump over low logs and spikes"
             >
@@ -1401,7 +1401,7 @@ export default function ElephantRunner() {
 
             <button
               type="button"
-              onClick={triggerSlide}
+              onPointerDown={triggerSlide}
               className="px-4 h-12 rounded-xl bg-pink-500/20 border border-pink-500/50 active:bg-pink-500/40 text-pink-300 font-black text-xs flex items-center gap-1.5 transition shadow-md cursor-pointer"
               title="Slide under high arches and lasers"
             >

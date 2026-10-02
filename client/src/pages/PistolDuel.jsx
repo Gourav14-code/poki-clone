@@ -98,6 +98,13 @@ export default function PistolDuel({ onClose }) {
   const sizeRef    = useRef({ W: 580, H: 400 });
 
   const [phase,   setPhase]   = useState('menu');
+  const [isPortrait, setIsPortrait] = useState(false);
+  useEffect(() => {
+    const check = () => setIsPortrait(window.innerWidth < window.innerHeight && window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
   const [lvlIdx,  setLvlIdx]  = useState(0);
   const [hud,     setHud]     = useState({ pHp:3, cHp:1, cMax:1, lvl:1, label:'Rookie', score:0 });
   const [overlay, setOverlay] = useState(null);
@@ -386,6 +393,14 @@ export default function PistolDuel({ onClose }) {
           className="absolute inset-0 w-full h-full block"
           style={{ cursor: phase==='playing'?'crosshair':'default', touchAction:'none' }}
         />
+
+        {isPortrait && (
+          <div className="absolute inset-0 z-30 bg-slate-950/95 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="text-5xl">🔄</div>
+            <h3 className="text-xl font-bold text-white">Rotate to Landscape</h3>
+            <p className="text-slate-400 text-sm">Pistol Duel plays best in landscape mode</p>
+          </div>
+        )}
 
         {/* MENU */}
         {phase==='menu' && (

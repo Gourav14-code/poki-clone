@@ -720,10 +720,10 @@ export default function WebGame() {
       {/* ── Modal ────────────────────────────────────────────────────────── */}
       {modal && (
         <div
-          className="fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-2 md:p-6 backdrop-blur-md"
+          className="fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-0 sm:p-2 md:p-6 backdrop-blur-md"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
-          <div className="bg-slate-900 rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-slate-700 flex flex-col" style={{ height: 'min(92vh, 680px)' }}>
+          <div className="bg-slate-900 rounded-none sm:rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border-0 sm:border sm:border-slate-700 flex flex-col" style={{ height: '100dvh', maxHeight: '680px' }}>
             {/* Modal header */}
             <div className="bg-slate-800/90 px-5 py-3.5 border-b border-slate-700/60 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
@@ -759,7 +759,7 @@ export default function WebGame() {
             <div
               ref={gameAreaRef}
               className="flex-1 bg-slate-950 relative overflow-hidden"
-              style={{ minHeight: 480 }}
+              style={{ minHeight: 0 }}
             >
               {modal.duel ? (
                 <PistolDuel onClose={closeModal} />

@@ -587,6 +587,7 @@ export default function BikeRacer({ onClose }) {
   const [phase, setPhase] = useState('playing'); // 'playing' | 'gameover' | 'levelcomplete'
   const [shattered, setShattered] = useState(false);
   const [hud,   setHud]   = useState({
+    speed: 0, dist: 0, nitro: 100, nitroActive: false, score: 0, overtakes: 0, gear: 1, rpm: 0,
     speed: 0, topSpeed: 0, dist: 0, nitro: 100, nitroActive: false, score: 0, overtakes: 0, gear: 1, rpm: 0,
     level: 1, targetDist: 1000, time: 0
   });
@@ -1614,9 +1615,14 @@ export default function BikeRacer({ onClose }) {
         playerGroup.position.x = s.playerX;
         // Slight elevation offset when leaning ensures tires, exhaust, and pegs NEVER clip into the road
         playerGroup.position.y = Math.abs(s.playerLean) * 0.08;
-        playerGroup.rotation.z = s.playerLean;
-        playerGroup.rotation.y = 0; // Strictly facing -Z (forward)
+        // Use explicit Euler order to guarantee clean matrixWorld (prevents cockpit camera jitter from dirty flags)
+        playerGroup.setRotationFromEuler(new THREE.Euler(0, 0, s.playerLean, 'YZX'));
         rider.rotation.z = s.playerLean * 0.2;
+        // ── CRITICAL: Force matrixWorld recompute NOW ──
+        // Three.js only updates matrixWorld during renderer.render(). The cockpit camera reads
+        // playerGroup.matrixWorld to compute the eye position — if we don't force an update here,
+        // it reads LAST frame's matrix (wrong lean angle), causing 1-frame-offset flicker/bubbling on every turn.
+        playerGroup.updateWorldMatrix(true, false);
       }
 
       // ── Road Texture Scrolling (forward motion rushing towards player) ────
@@ -1904,30 +1910,42 @@ export default function BikeRacer({ onClose }) {
 
         const currentCurvature = getRoadCurveAt(s.dist);
         if(s.cameraMode==='chase') {
-          camera.up.set(0, 1, 0);
           // Stable, forward-driving chase cam with smooth lateral follow
           const targetX = s.playerX * 0.88; // Slight trailing lag creates natural 3D lane change feel
           const targetY = 1.82 + ratio * 0.1;
-          const targetZ = 4.3 - ratio * 0.22; // Subtly tucks forward under acceleration to enhance forward speed rush
+          const targetZ = 4.3 - ratio * 0.22;
           camera.position.x += (targetX - camera.position.x) * 12 * dt;
           camera.position.y += (targetY - camera.position.y) * 10 * dt;
           camera.position.z += (targetZ - camera.position.z) * 10 * dt;
-          // Camera banks slightly with curve + bike lean
-          camera.rotation.z = -s.playerLean * 0.24 - currentCurvature * 0.05;
-          camera.fov = 64 + ratio * 5; // Controlled, clean speed FOV (no bike shrinking)
-          camera.updateProjectionMatrix();
           // High-speed micro-shake
           if(s.speed > 120){
             camera.position.y += (Math.random() - 0.5) * ratio * 0.018;
             camera.position.x += (Math.random() - 0.5) * ratio * 0.012;
           }
+          camera.fov = 64 + ratio * 5;
+          camera.updateProjectionMatrix();
           // Camera peers through the curve ahead
           const lookAheadCurve = getCurveOffset(-35, s.dist);
+          // Bank roll: tilt camera.up slightly — lookAt() USES camera.up as input, so this is
+          // the correct way to add roll. Setting camera.rotation.z BEFORE lookAt() is wrong because
+          // lookAt() overwrites the quaternion entirely, discarding any prior rotation.z value.
+          const targetBankZ = -s.playerLean * 0.24 - currentCurvature * 0.05;
+          if (!s._chaseBankZ) s._chaseBankZ = 0;
+          s._chaseBankZ += (targetBankZ - s._chaseBankZ) * Math.min(1, 8 * dt);
+          camera.up.set(-s._chaseBankZ, 1, 0).normalize();
           camera.lookAt(s.playerX * 0.55 + lookAheadCurve * 0.35, 1.1, -26);
         } else {
-          // First-person cockpit: locked to rider eye position on the bike with 100% precision
-          // localEye at (0, 1.15, -0.22) in playerGroup coordinates
-          const localEye = new THREE.Vector3(0, 1.15, -0.22);
+          // First-person cockpit view — dynamically adapted for screen aspect ratio
+          // On portrait phones (360x800, aspect≈0.45) the horizontal FOV shrinks to ~34° which
+          // clips the wide handlebars/mirrors. We pull the camera back + up proportionally.
+          const aspect = camera.aspect;
+          // pFactor: 0 = landscape/desktop, 1 = very portrait (aspect ≤ 0.5)
+          const pFactor = aspect < 1.0 ? Math.max(0, Math.min(1, (1.0 - aspect) * 2.0)) : 0;
+
+          // Eye position: push back (Z) and up (Y) in portrait so full handlebar width fits in frame
+          const eyeZ = -0.05 + pFactor * 0.35;   // desktop: -0.05 | 360x800: ~+0.30
+          const eyeY =  1.15 + pFactor * 0.13;   // desktop:  1.15 | 360x800: ~1.28
+          const localEye = new THREE.Vector3(0, eyeY, eyeZ);
           const worldEye = localEye.applyMatrix4(playerGroup.matrixWorld);
 
           // Subtle harmonic engine rev vibration (zero random polygon jitter)
@@ -1937,18 +1955,23 @@ export default function BikeRacer({ onClose }) {
 
           camera.position.copy(worldEye);
 
-          // Camera up-vector tilts precisely with the bike's roll / lean
-          const localUp = new THREE.Vector3(0, 1, 0);
-          localUp.applyQuaternion(playerGroup.quaternion);
-          camera.up.copy(localUp);
+          // ── FLICKER FIX: Smooth the camera up-vector instead of snapping it each frame ──
+          const targetUp = new THREE.Vector3(0, 1, 0).applyQuaternion(playerGroup.quaternion);
+          if (!s._cockpitUp) s._cockpitUp = new THREE.Vector3(0, 1, 0);
+          s._cockpitUp.lerp(targetUp, Math.min(1, 14 * dt));
+          camera.up.copy(s._cockpitUp);
 
-          camera.fov = 66 + ratio * 6;
+          // FOV: wider in portrait to show more scene horizontally, same as desktop in landscape
+          const baseFov = 68 + pFactor * 10;  // desktop: 68 | 360x800: ~78
+          camera.fov = baseFov + ratio * 6;
           camera.updateProjectionMatrix();
 
           // Camera looks down the highway along the curved road ahead
           const lookAheadCurve = getCurveOffset(-36, s.dist);
+          if (!s._cockpitLookX) s._cockpitLookX = s.playerX;
+          s._cockpitLookX += (s.playerX + lookAheadCurve * 0.45 - s._cockpitLookX) * Math.min(1, 10 * dt);
           const lookTarget = new THREE.Vector3(
-            s.playerX + lookAheadCurve * 0.45,
+            s._cockpitLookX,
             worldEye.y - 0.08,
             worldEye.z - 36
           );
@@ -2056,7 +2079,15 @@ export default function BikeRacer({ onClose }) {
     // Resize handling
     const onResize = () => {
       const w=container.clientWidth||800, h=container.clientHeight||500;
-      camera.aspect=w/h; camera.updateProjectionMatrix();
+      const aspect = w/h;
+      camera.aspect = aspect;
+      if(aspect < 1.0) {
+        // Portrait: widen FOV so highway lanes stay visible, don't just squash the scene
+        camera.fov = Math.min(92, 65 / aspect * 0.82);
+      } else {
+        camera.fov = 65;
+      }
+      camera.updateProjectionMatrix();
       renderer.setSize(w,h);
     };
     const ro = new ResizeObserver(onResize);
@@ -2081,7 +2112,7 @@ export default function BikeRacer({ onClose }) {
   const steerOff= useCallback(()=>{ stateRef.current.steer=0; },[]);
 
   return (
-    <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',background:'#01050e',overflow:'hidden'}}>
+    <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',background:'#01050e',overflow:'hidden',touchAction:'none'}}>
       {/* ── Canvas Container ── */}
       <div ref={containerRef} className="relative flex-1 overflow-hidden select-none touch-none">
 
@@ -2155,15 +2186,17 @@ export default function BikeRacer({ onClose }) {
                     <span className="text-white/40">/</span>
                     <span className="text-slate-300 font-bold">{formatDist(hud.targetDist)}</span>
                   </div>
-                  <span className="text-white/20">|</span>
-                  <div className="flex items-center gap-1 font-mono text-xs">
-                    <span className="text-white/60">REMAIN:</span>
-                    <span className="text-amber-300 font-bold">{formatDist(Math.max(0, hud.targetDist - hud.dist))}</span>
-                  </div>
-                  <span className="text-white/20">|</span>
-                  <div className="flex items-center gap-1 font-mono text-xs">
-                    <span className="text-cyan-300 font-bold">⏱️ {(hud.time || 0).toFixed(1)}s</span>
-                  </div>
+                  <span className="hidden sm:contents">
+                    <span className="text-white/20">|</span>
+                    <div className="flex items-center gap-1 font-mono text-xs">
+                      <span className="text-white/60">REMAIN:</span>
+                      <span className="text-amber-300 font-bold">{formatDist(Math.max(0, hud.targetDist - hud.dist))}</span>
+                    </div>
+                    <span className="text-white/20">|</span>
+                    <div className="flex items-center gap-1 font-mono text-xs">
+                      <span className="text-cyan-300 font-bold">⏱️ {(hud.time || 0).toFixed(1)}s</span>
+                    </div>
+                  </span>
                 </div>
 
                 {/* Race Progress Bar */}
@@ -2189,8 +2222,8 @@ export default function BikeRacer({ onClose }) {
                 )}
               </div>
 
-              {/* Right: Speedometer, Score, Nitro */}
-              <div className="flex flex-col items-end gap-1.5 pointer-events-auto">
+              {/* Right: Speedometer, Score, Nitro — hidden on mobile (center HUD shows speed) */}
+              <div className="hidden sm:flex flex-col items-end gap-1.5 pointer-events-auto">
                 {/* Speed pill */}
                 <div className="flex items-center gap-2 bg-black/52 border border-white/18 px-3.5 py-1.5 rounded-full backdrop-blur-md shadow-lg">
                   <span className="text-rose-400 font-black text-base font-mono">{hud.speed}</span>
@@ -2202,7 +2235,7 @@ export default function BikeRacer({ onClose }) {
                 </div>
 
                 {/* RPM bar */}
-                <div className="w-48 h-1.5 bg-slate-800/70 rounded-full overflow-hidden border border-white/10 backdrop-blur-md">
+                <div className="hidden sm:block w-48 h-1.5 bg-slate-800/70 rounded-full overflow-hidden border border-white/10 backdrop-blur-md">
                   <div className="h-full rounded-full transition-all duration-75"
                     style={{width:`${Math.round(hud.rpm*100)}%`, background:`linear-gradient(90deg, #22c55e ${hud.rpm<.6?'':','} ${hud.rpm>=.6?'#f59e0b':''} ${hud.rpm>=.85?', #ef4444':''})`}}/>
                 </div>
@@ -2211,7 +2244,7 @@ export default function BikeRacer({ onClose }) {
                 <button
                   onClick={triggerNitro}
                   disabled={hud.nitro < 100 || hud.nitroActive}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-lg transition-all ${
+                  className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold shadow-lg transition-all ${
                     hud.nitroActive
                       ? 'bg-cyan-500 text-white border border-white shadow-[0_0_15px_#06b6d4]'
                       : hud.nitro >= 100
@@ -2224,11 +2257,11 @@ export default function BikeRacer({ onClose }) {
               </div>
             </div>
 
-            {/* ── On-Screen Transparent Nitro Boost Button (Slightly to the side of screen center) ── */}
+            {/* ── On-Screen Transparent Nitro Boost Button ── */}
             <div className={`absolute pointer-events-auto z-30 select-none ${
               cameraMode === 'cockpit'
-                ? 'bottom-28 right-24 sm:right-28 md:right-36'
-                : 'bottom-14 sm:bottom-16 md:bottom-20 left-1/2 translate-x-10 sm:translate-x-16 md:translate-x-20'
+                ? 'bottom-[5.5rem] right-2 sm:bottom-28 sm:right-24 md:right-36'
+                : 'bottom-[5.5rem] left-1/2 -translate-x-1/2 sm:bottom-20 sm:left-1/2 sm:-translate-x-1/2 md:bottom-20'
             }`}>
               <button
                 type="button"
@@ -2290,7 +2323,7 @@ export default function BikeRacer({ onClose }) {
             </div>
 
             {/* Bottom Touch Controls */}
-            <div className="flex items-end justify-between w-full pointer-events-auto">
+            <div className="flex items-end justify-between w-full px-1 pb-2 pointer-events-auto" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
               {/* Steer Left + Brake (left cluster) */}
               <div className="flex items-end gap-2">
                 <button
@@ -2303,18 +2336,16 @@ export default function BikeRacer({ onClose }) {
                 </button>
                 <button
                   onPointerDown={steerL} onPointerUp={steerOff} onPointerCancel={steerOff}
-                  className="w-12 h-12 rounded-full bg-black/42 border border-white/25 text-white/80 flex items-center justify-center text-lg backdrop-blur-sm shadow-lg active:scale-90 cursor-pointer select-none touch-none">
+                  className="w-14 h-14 rounded-full bg-black/42 border border-white/25 text-white/80 flex items-center justify-center text-xl backdrop-blur-sm shadow-lg active:scale-90 cursor-pointer select-none touch-none">
                   ‹
                 </button>
               </div>
-
-
 
               {/* Steer Right + Gas (right cluster) */}
               <div className="flex items-end gap-2">
                 <button
                   onPointerDown={steerR} onPointerUp={steerOff} onPointerCancel={steerOff}
-                  className="w-12 h-12 rounded-full bg-black/42 border border-white/25 text-white/80 flex items-center justify-center text-lg backdrop-blur-sm shadow-lg active:scale-90 cursor-pointer select-none touch-none">
+                  className="w-14 h-14 rounded-full bg-black/42 border border-white/25 text-white/80 flex items-center justify-center text-xl backdrop-blur-sm shadow-lg active:scale-90 cursor-pointer select-none touch-none">
                   ›
                 </button>
                 <button
@@ -2359,7 +2390,7 @@ export default function BikeRacer({ onClose }) {
               Outstanding racing! You reached the required distance and crossed the finish line.
             </p>
 
-            <div className="flex gap-4 md:gap-8 bg-slate-900/90 p-4 md:px-7 md:py-5 rounded-2xl border border-slate-700 shadow-2xl mb-6 backdrop-blur-md">
+            <div className="flex flex-wrap gap-3 md:gap-8 justify-center bg-slate-900/90 p-4 md:px-7 md:py-5 rounded-2xl border border-slate-700 shadow-2xl mb-6 backdrop-blur-md">
               <div className="text-center">
                 <div className="text-slate-400 text-[11px] font-semibold tracking-wider">LEVEL</div>
                 <div className="text-xl md:text-2xl font-black font-mono text-cyan-400">{stateRef.current.level} / 5</div>

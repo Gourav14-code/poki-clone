@@ -1553,7 +1553,7 @@ export default function MarioGame() {
         </div>
 
         {/* Canvas Game Screen */}
-        <div className="relative flex justify-center bg-[#5c94fc]">
+        <div className="relative flex justify-center bg-[#5c94fc]" style={{ touchAction: 'none' }}>
           <canvas
             ref={canvasRef}
             data-testid="game-canvas"
@@ -1631,8 +1631,8 @@ export default function MarioGame() {
         </div>
 
         {/* On-Screen Touch / Click Gamepad */}
-        <div className="bg-slate-900 border-t border-slate-800 p-4">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="bg-slate-900 border-t border-slate-800 p-4" style={{ touchAction: 'none', paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}>
+          <div className="max-w-4xl mx-auto flex flex-row items-center justify-between gap-2 sm:gap-4">
             {/* D-Pad Controls */}
             <div className="flex items-center gap-3">
               <button
@@ -1660,7 +1660,7 @@ export default function MarioGame() {
             </div>
 
             {/* Instruction Tip */}
-            <div className="text-center font-mono text-xs text-slate-400">
+            <div className="hidden sm:block text-center font-mono text-xs text-slate-400">
               <span className="text-amber-400 font-semibold">Puppy Controls:</span> [◀ / ▶ / A / D] Trot • [Space / ▲ / W] Jump & Hit Bone Blocks • [B] Bark! • [Shift / X] Sprint
             </div>
 
