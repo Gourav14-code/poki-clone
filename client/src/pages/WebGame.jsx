@@ -339,7 +339,7 @@ function PistolGame({ containerRef }) {
   );
 }
 
-// ─── Animated mini-preview for Pistol Duel card ──────────────────────────────
+// ─── Animated mini-preview for Pistol Duel card (Authentic Game Visuals) ──────
 function DuelPreviewCanvas() {
   const ref = useRef(null);
   const rafRef = useRef(null);
@@ -347,128 +347,101 @@ function DuelPreviewCanvas() {
     const c = ref.current; if (!c) return;
     const ctx = c.getContext('2d');
     const W = c.width, H = c.height;
-    // Simple animated demo: two guns bouncing, bullets flying
+
     const state = {
-      p: { x: W*0.25, y: H*0.5, vx: 0.8, vy: 0.4, a: 0, spin: 0.03 },
-      e: { x: W*0.75, y: H*0.5, vx:-0.7, vy:-0.5, a: Math.PI, spin:-0.025 },
+      p: { x: W * 0.25, y: H * 0.5, vx: 0.7, vy: 0.35, a: 0, spin: 0.02 },
+      e: { x: W * 0.75, y: H * 0.5, vx: -0.65, vy: -0.4, a: Math.PI, spin: -0.02 },
       bullets: [],
+      particles: [],
       t: 0,
     };
+
     const draw = () => {
       state.t++;
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0,0,W,H);
-      // border
-      ctx.strokeStyle = 'rgba(56,189,248,0.4)'; ctx.lineWidth = 2;
-      ctx.strokeRect(1,1,W-2,H-2);
+      // Arena background
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#0f172a');
+      bg.addColorStop(1, '#1e1b4b');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      // Arena grid lines (matches actual game)
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+      // Center dash line
+      ctx.setLineDash([6, 8]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Arena glowing border
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
 
       const moveDot = (d) => {
         d.x += d.vx; d.y += d.vy; d.a += d.spin;
-        if (d.x < 12 || d.x > W-12) { d.vx *= -1; d.spin *= -1; }
-        if (d.y < 8  || d.y > H-8)  { d.vy *= -1; d.spin *= -1; }
+        if (d.x < 24 || d.x > W - 24) { d.vx *= -1; d.spin *= -1; }
+        if (d.y < 20 || d.y > H - 20) { d.vy *= -1; d.spin *= -1; }
       };
       moveDot(state.p); moveDot(state.e);
 
-      // Spawn bullet every 60 frames
-      if (state.t % 60 === 0) {
+      // Spawn authentic bullets
+      if (state.t % 50 === 0) {
         const dx = state.e.x - state.p.x, dy = state.e.y - state.p.y;
-        const l = Math.sqrt(dx*dx+dy*dy)||1;
-        state.bullets.push({ x: state.p.x, y: state.p.y, vx:(dx/l)*3, vy:(dy/l)*3, c:'#fbbf24' });
-        state.bullets.push({ x: state.e.x, y: state.e.y, vx:-(dx/l)*3, vy:-(dy/l)*3, c:'#f97316' });
+        const l = Math.sqrt(dx * dx + dy * dy) || 1;
+        state.bullets.push({ x: state.p.x, y: state.p.y, vx: (dx / l) * 3.5, vy: (dy / l) * 3.5, c: '#fbbf24' });
+        state.bullets.push({ x: state.e.x, y: state.e.y, vx: -(dx / l) * 3.5, vy: -(dy / l) * 3.5, c: '#fb923c' });
       }
 
       state.bullets = state.bullets.filter(b => b.x > 0 && b.x < W && b.y > 0 && b.y < H);
       state.bullets.forEach(b => {
         b.x += b.vx; b.y += b.vy;
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = b.c;
         ctx.fillStyle = b.c;
-        ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
       });
 
-      const drawG = (d, col) => {
-        ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
-        ctx.shadowBlur = 10; ctx.shadowColor = col;
+      // Authentic Gun drawing function matching PistolDuel.jsx
+      const drawActualGun = (x, y, angle, col) => {
+        const GW = 34, GH = 13;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 12;
+        // Body
         ctx.fillStyle = col;
-        ctx.fillRect(-12, -4, 20, 8);
-        ctx.fillRect(8, -3, 10, 6);
+        ctx.fillRect(-GW * 0.3, -GH / 2, GW * 0.65, GH);
+        // Barrel
+        ctx.fillRect(GW * 0.33, -3.5, GW * 0.6, 7);
+        // Muzzle
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(GW * 0.92, 0, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // Grip
+        ctx.fillStyle = col === '#38bdf8' ? '#1e40af' : '#7f1d1d';
+        ctx.shadowBlur = 0;
+        ctx.fillRect(-GW * 0.3, 1.5, GW * 0.22, GH - 1.5);
         ctx.restore();
       };
-      drawG(state.p, '#38bdf8');
-      drawG(state.e, '#ef4444');
+
+      drawActualGun(state.p.x, state.p.y, state.p.a, '#38bdf8');
+      drawActualGun(state.e.x, state.e.y, state.e.a, '#ef4444');
 
       rafRef.current = requestAnimationFrame(draw);
     };
     rafRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
-  return <canvas ref={ref} width={260} height={160} className="w-full h-full rounded-xl opacity-80 group-hover:opacity-100 transition-opacity" />;
-}
-
-// ─── Animated mini-preview for Bike Racer card ───────────────────────────────
-function BikePreviewCanvas() {
-  const ref = useRef(null);
-  const rafRef = useRef(null);
-  useEffect(() => {
-    const c = ref.current; if (!c) return;
-    const ctx = c.getContext('2d');
-    const W = c.width, H = c.height;
-    let t = 0;
-    const draw = () => {
-      t++;
-      // Sky gradient
-      const sky = ctx.createLinearGradient(0,0,0,H*0.55);
-      const night = Math.sin(t * 0.008) < 0;
-      sky.addColorStop(0, night ? '#0a0a1a' : '#0ea5e9');
-      sky.addColorStop(1, night ? '#1a1a3a' : '#7dd3fc');
-      ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
-
-      // Sun / moon
-      const sunX = W*0.75 + Math.cos(t*0.008)*W*0.3;
-      const sunY = H*0.22 + Math.sin(t*0.008)*H*0.2;
-      ctx.fillStyle = night ? '#e2e8f0' : '#fef08a';
-      ctx.beginPath(); ctx.arc(sunX, sunY, 10, 0, Math.PI*2); ctx.fill();
-
-      // Ground
-      ctx.fillStyle = night ? '#0f1a0f' : '#1a5c22';
-      ctx.fillRect(0, H*0.55, W, H);
-
-      // Road strips (perspective)
-      for (let i = 0; i < 10; i++) {
-        const pct = (i+1)/10;
-        const ry = H*0.55 + pct*(H - H*0.55);
-        const rw = pct * W * 0.55;
-        ctx.fillStyle = i%2===0 ? '#3b3b3b' : '#4a4a4a';
-        ctx.fillRect(W/2 - rw/2, ry - pct*8, rw, pct*10);
-      }
-
-      // Road center dashes
-      for (let i = 0; i < 6; i++) {
-        const pct = (i + ((t*0.04)%1)) / 6;
-        const ry = H*0.55 + pct*(H - H*0.55);
-        const dw = pct * 6;
-        const dh = pct * 12;
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.fillRect(W/2 - dw/2, ry, dw, dh);
-      }
-
-      // Bike (simple)
-      const bx = W/2 + Math.sin(t*0.04)*W*0.08;
-      const by = H*0.82;
-      ctx.shadowBlur = 8; ctx.shadowColor = '#3b82f6';
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(bx-8, by-14, 16, 14);
-      ctx.fillRect(bx+6, by-10, 8, 6);
-      // wheels
-      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(bx+8, by, 6, 0, Math.PI*2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(bx-8, by, 6, 0, Math.PI*2); ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      rafRef.current = requestAnimationFrame(draw);
-    };
-    rafRef.current = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, []);
-  return <canvas ref={ref} width={260} height={160} className="w-full h-full rounded-xl opacity-85 group-hover:opacity-100 transition-opacity" />;
+  return <canvas ref={ref} width={260} height={160} className="w-full h-full rounded-2xl opacity-85 group-hover:opacity-100 transition-opacity" />;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -512,35 +485,49 @@ function GameCard({ game, onOpen }) {
     );
   }
 
-  // ── Bike Racer special card ─────────────────────────────────────────────────
+  // ── Bike Racer card (Actual Gameplay Video & Authentic Poster) ──────────────
   if (game.bike) {
     return (
       <div
         className={`relative rounded-3xl overflow-hidden cursor-pointer shadow-xl group transition-all duration-250 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-2xl hover:z-10 ${SPAN_MAP[game.size] || 'col-span-1 row-span-1'}`}
         onClick={() => onOpen(game)}
-        style={{ background: 'linear-gradient(135deg,#0f172a 0%,#0c4a6e 50%,#0e7490 100%)' }}
+        style={{ background: '#020617' }}
       >
-        {/* Road preview animation */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <BikePreviewCanvas />
+        {/* Actual 3D Gameplay Video with authentic in-game poster fallback */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none bg-slate-950">
+          <video
+            src="/videos/bike-gameplay.mp4"
+            poster="/videos/bike_poster.png"
+            autoPlay
+            muted
+            loop
+            playsInline
+            webkit-playsinline="true"
+            onLoadedMetadata={(e) => {
+              e.currentTarget.muted = true;
+              e.currentTarget.play().catch(() => {});
+            }}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
         </div>
+
         {/* Info overlay */}
-        <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-t from-slate-950/90 via-transparent to-slate-950/50">
+        <div className="absolute inset-0 flex flex-col justify-between p-4 bg-gradient-to-t from-slate-950/95 via-slate-950/20 to-slate-950/40">
           <div className="flex items-center justify-between">
-            <span className="bg-orange-400 text-slate-900 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-lg shadow-orange-400/30 animate-pulse">
-              🏍️ #2 RACE
+            <span className="bg-gradient-to-r from-orange-400 to-rose-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-lg shadow-orange-500/40 animate-pulse">
+              🏍️ #2 3D RACER
             </span>
-            <span className="text-white/80 text-xs font-semibold bg-black/30 px-2 py-0.5 rounded-full backdrop-blur-sm">{game.category}</span>
+            <span className="text-white/90 text-xs font-semibold bg-black/40 px-2.5 py-0.5 rounded-full backdrop-blur-md border border-white/10">{game.category}</span>
           </div>
           <div>
-            <h3 className="text-white font-extrabold text-lg drop-shadow-lg mb-0.5" style={{ fontFamily: 'Fredoka, sans-serif', textShadow: '0 0 15px #38bdf8' }}>
+            <h3 className="text-white font-extrabold text-lg drop-shadow-lg mb-0.5" style={{ fontFamily: 'Fredoka, sans-serif', textShadow: '0 0 15px #f97316' }}>
               3D Bike Racer
             </h3>
-            <p className="text-slate-300 text-[11px] mb-2">Day/Night Road · 3 AI Rivals · Collect Coins</p>
+            <p className="text-slate-300 text-[11px] mb-2 font-medium">Traffic Rider 3D · Cockpit View · Nitro Rush</p>
             <div className="flex items-center justify-between">
               <span className="text-slate-400 text-xs"><i className="fa-solid fa-thumbs-up text-xs mr-1 text-orange-400" />{game.likes}</span>
-              <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-xl shadow flex items-center gap-1">
-                <i className="fa-solid fa-play text-[10px]" /> Race
+              <span className="bg-gradient-to-r from-orange-500 to-rose-600 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow-lg shadow-orange-500/30 flex items-center gap-1.5 hover:brightness-110">
+                <i className="fa-solid fa-gauge-high text-[11px]" /> Race
               </span>
             </div>
           </div>
